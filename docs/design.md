@@ -6,7 +6,7 @@ The package registers `openai-codex` through Harness's public `LlmRuntime` and `
 
 The bundle patch inserts only `llm-openai-codex`. It never writes `agent-default-model` or `web.searchProvider`. `enableSearch` and `enableImageTool` are capability gates defaulting to `false`; the optional service injections are not registered while disabled.
 
-The Host registers `llm-openai-codex` as the plugin-owned settings namespace and declares `OpenAI Codex` in the LLM configurable-provider directory. The browser binds that namespace through Harness's settings-scope transport and renders account, quota, Save/Discard capability controls in the existing Plugin configuration card. Revision-fenced field writes preserve unrelated settings. Committed changes reconcile search and image registrations live; the default-model and global-search namespaces are never written.
+The Host registers `llm-openai-codex` as the plugin-owned capability settings namespace. DSH's `llm-pi-ai` catalog owns the `openai-codex` configurable-provider directory entry, while Codex Connect registers the active adapter without redeclaring that entry. The browser binds the plugin namespace through Harness's settings-scope transport and renders account, quota, Save/Discard capability controls in the existing Plugin configuration card. Revision-fenced field writes preserve unrelated settings. Committed changes reconcile search and image registrations live; the default-model and global-search namespaces are never written.
 
 ## OAuth persistence
 
@@ -26,4 +26,4 @@ Before registration the plugin checks current provider ids. An existing `openai-
 
 ## Compatibility boundary
 
-The Alpha pins Harness `0.1.0-rc.7` development dependencies and uses its keyed `settings.plugin.item` contract; supported Node.js is `^22.19.0 || >=24.0.0`. It pins `@earendil-works/pi-ai` `0.82.1`. Backend eligibility, quotas, models, and protocol details remain controlled upstream. Tests use temporary OAuth documents and mocked network responses; CI does not perform real authentication.
+The Alpha pins Harness `0.1.1-rc.2` development dependencies and uses its keyed `settings.plugin.item` contract; supported Node.js is `^22.19.0 || >=24.0.0`. It pins `@earendil-works/pi-ai` `0.82.1`. Backend eligibility, quotas, models, and protocol details remain controlled upstream. Tests use temporary OAuth documents and mocked network responses; CI does not perform real authentication.
