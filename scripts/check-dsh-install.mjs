@@ -1,47 +1,81 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { scrubCanaryEnvironment } from './canary-environment.mjs'
+import { runBoundedCommand } from './bounded-command.mjs'
 
 const JSON_SCHEMA_VERSION = 1
 const DEFAULT_DSH_VERSION = '0.1.1-rc.2'
+const UNDECLARED_CANARY_MODE = '1'
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const COMMAND_TIMEOUT_MS = 20 * 60 * 1000
+
+export class InfrastructureCheckError extends Error {}
+export class CompatibilityCheckError extends Error {}
 
 function commandName(name) {
   return process.platform === 'win32' && (name === 'npm' || name === 'pnpm') ? `${name}.cmd` : name
 }
 
-function runCommand(command, args, options) {
-  const result = spawnSync(commandName(command), args, {
+async function runCommand(command, args, options) {
+  const result = await runBoundedCommand(commandName(command), args, {
     cwd: options.cwd,
     env: options.env,
-    encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024,
-    windowsHide: true,
+    timeoutMs: COMMAND_TIMEOUT_MS,
   })
   if (result.error !== undefined) {
-    throw new Error(`${command} ${args.join(' ')} could not start: ${result.error.message}`)
+    const cleanupDetail = result.cleanupError === undefined ? '' : `; process-tree cleanup failed: ${result.cleanupError.message}`
+    throw new InfrastructureCheckError(`${command} ${args.join(' ')} failed: ${result.error.message}${cleanupDetail}`)
   }
   return {
-    status: result.status ?? 1,
+    status: result.status ?? 2,
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
   }
 }
 
-function requireSuccess(label, result) {
-  if (result.status === 0) return
-  const detail = (result.stderr || result.stdout).trim().split(/\r?\n/u).slice(-12).join('\n')
-  throw new Error(`${label} failed with exit ${String(result.status)}${detail === '' ? '' : `:\n${detail}`}`)
+function isInfrastructureFailure(value) {
+  const text = value.toLowerCase()
+  return /\b(?:e401|e403|e404|eai_again|econnreset|enotfound|etimedout|err_socket_timeout)\b/u.test(text)
+    || text.includes('err_pnpm_fetch')
+    || text.includes('err_pnpm_meta_fetch_fail')
+    || text.includes('network request failed')
+    || text.includes('fetch failed')
 }
 
-function configBlock(dump, id) {
+export function commandFailureClassification(result, requestedClassification = 'infrastructure') {
+  const detail = [result.stderr, result.stdout].filter(value => value.trim() !== '').join('\n')
+  return requestedClassification === 'compatibility' && !isInfrastructureFailure(detail)
+    ? 'compatibility'
+    : 'infrastructure'
+}
+
+function requireSuccess(label, result, classification = 'infrastructure') {
+  if (result.status === 0) return
+  const rawDetail = [result.stderr, result.stdout].filter(value => value.trim() !== '').join('\n')
+  const detail = rawDetail.trim().split(/\r?\n/u).slice(-12).join('\n')
+  const message = `${label} failed with exit ${String(result.status)}${detail === '' ? '' : `:\n${detail}`}`
+  if (commandFailureClassification(result, classification) === 'compatibility') {
+    throw new CompatibilityCheckError(message)
+  }
+  throw new InfrastructureCheckError(message)
+}
+
+export function installCheckExitCode(error) {
+  return error instanceof CompatibilityCheckError ? 1 : 2
+}
+
+function configBlock(dump, id, classification = 'infrastructure') {
   const lines = dump.split(/\r?\n/u)
   const start = lines.findIndex(line => line === `- id: ${id}`)
-  if (start < 0) throw new Error(`dump-config is missing the ${id} block`)
+  if (start < 0) {
+    const ErrorType = classification === 'compatibility' ? CompatibilityCheckError : InfrastructureCheckError
+    throw new ErrorType(`dump-config is missing the ${id} block`)
+  }
   let end = lines.length
   for (let index = start + 1; index < lines.length; index += 1) {
     if (/^(?:- id: |# ==)/u.test(lines[index] ?? '')) {
@@ -55,68 +89,95 @@ function configBlock(dump, id) {
 
 function parseOneLineJson(output, label) {
   const text = output.trim()
-  if (text === '' || /\r?\n/u.test(text)) throw new Error(`${label} did not emit exactly one JSON line`)
+  if (text === '' || /\r?\n/u.test(text)) throw new CompatibilityCheckError(`${label} did not emit exactly one JSON line`)
   try {
     return JSON.parse(text)
   } catch (error) {
-    throw new Error(`${label} emitted invalid JSON: ${error instanceof Error ? error.message : String(error)}`)
+    throw new CompatibilityCheckError(`${label} emitted invalid JSON: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
 function assertDoctorJson(value, dshHome, repoRoot) {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error('doctor JSON must be an object')
+    throw new CompatibilityCheckError('doctor JSON must be an object')
   }
   const report = value
   if (report['schemaVersion'] !== JSON_SCHEMA_VERSION || report['credentialFile']?.['state'] !== 'missing') {
-    throw new Error('doctor JSON did not report schemaVersion 1 and a missing credential file')
+    throw new CompatibilityCheckError('doctor JSON did not report schemaVersion 1 and a missing credential file')
   }
   if (report['credentialFile']?.['path'] !== undefined || report['credentialFile']?.['expiresAt'] !== undefined) {
-    throw new Error('doctor JSON exposed credential path or expiry data')
+    throw new CompatibilityCheckError('doctor JSON exposed credential path or expiry data')
   }
   const compatibility = report['compatibility']
   const expectedPackages = ['@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-llm-pi-ai', '@earendil-works/pi-ai']
   if (compatibility?.['schemaVersion'] !== JSON_SCHEMA_VERSION || compatibility?.['status'] !== 'compatible') {
-    throw new Error('doctor JSON did not report schemaVersion 1 and compatible runtime dependencies')
+    throw new CompatibilityCheckError('doctor JSON did not report schemaVersion 1 and compatible runtime dependencies')
   }
   if (compatibility?.['node']?.['status'] !== 'compatible') {
-    throw new Error('doctor JSON did not report a compatible Node engine')
+    throw new CompatibilityCheckError('doctor JSON did not report a compatible Node engine')
   }
   for (const name of expectedPackages) {
     const entry = compatibility?.['packages']?.[name]
     const supported = name === '@earendil-works/pi-ai' ? '0.82.1' : DEFAULT_DSH_VERSION
     if (entry?.['supported'] !== supported || entry?.['installed'] !== supported || entry?.['status'] !== 'compatible') {
-      throw new Error(`doctor JSON did not report compatible ${name}`)
+      throw new CompatibilityCheckError(`doctor JSON did not report compatible ${name}`)
     }
   }
   const serialized = JSON.stringify(report)
   for (const forbidden of [dshHome, repoRoot, 'authorization', 'access-token', 'refresh-token', 'account-id']) {
-    if (serialized.includes(forbidden)) throw new Error(`doctor JSON exposed forbidden text: ${forbidden}`)
+    if (serialized.includes(forbidden)) throw new CompatibilityCheckError(`doctor JSON exposed forbidden text: ${forbidden}`)
   }
 }
 
 async function main() {
-  const build = runCommand('pnpm', ['run', 'build'], { cwd: REPO_ROOT, env: process.env })
-  requireSuccess('local build', build)
-
   const requestedDshVersion = process.env.DSH_VERSION
-  if (requestedDshVersion !== undefined && requestedDshVersion !== '' && requestedDshVersion !== DEFAULT_DSH_VERSION) {
+  const allowUndeclaredCanaryVersion = process.env.DSH_UNDECLARED_CANARY_VERSION === UNDECLARED_CANARY_MODE
+  if (requestedDshVersion !== undefined
+    && requestedDshVersion !== ''
+    && requestedDshVersion !== DEFAULT_DSH_VERSION
+    && !allowUndeclaredCanaryVersion) {
     throw new Error(`check-dsh-install only verifies the declared DSH CLI version ${DEFAULT_DSH_VERSION}`)
   }
-  const dshVersion = DEFAULT_DSH_VERSION
+  const dshVersion = requestedDshVersion === undefined || requestedDshVersion === ''
+    ? DEFAULT_DSH_VERSION
+    : requestedDshVersion
+  const inheritedEnvironment = allowUndeclaredCanaryVersion
+    ? scrubCanaryEnvironment(process.env)
+    : process.env
+  const build = await runCommand('pnpm', ['run', 'build'], { cwd: REPO_ROOT, env: inheritedEnvironment })
+  requireSuccess('local build', build)
+
   const tempRoot = await mkdtemp(join(tmpdir(), 'dsh-codex-connect-install-'))
   const dshHome = join(tempRoot, 'dsh-home')
   const installRoot = join(tempRoot, 'dsh-install')
   const workspace = join(tempRoot, 'workspace')
   await mkdir(workspace, { recursive: true })
   const env = {
-    ...process.env,
+    ...inheritedEnvironment,
     DSH_HOME: dshHome,
     DSH_TELEMETRY_MODE: 'DISABLED',
   }
 
   try {
-    const install = runCommand('npm', [
+    let pluginSpec = `link:${REPO_ROOT}`
+    if (allowUndeclaredCanaryVersion) {
+      const pack = await runCommand('npm', [
+        'pack',
+        '--json',
+        '--ignore-scripts',
+        '--pack-destination', tempRoot,
+      ], { cwd: REPO_ROOT, env })
+      requireSuccess('npm pack', pack)
+      const [manifest] = JSON.parse(pack.stdout)
+      if (typeof manifest?.filename !== 'string'
+        || manifest.filename.length === 0
+        || basename(manifest.filename) !== manifest.filename) {
+        throw new Error('npm pack did not report one package filename')
+      }
+      pluginSpec = `file:${join(tempRoot, manifest.filename)}`
+    }
+
+    const install = await runCommand('npm', [
       'install',
       '--prefix', installRoot,
       '--ignore-scripts',
@@ -128,47 +189,47 @@ async function main() {
     requireSuccess('npm install', install)
 
     const dshBinary = join(installRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'dsh.cmd' : 'dsh')
-    const versionResult = runCommand(dshBinary, ['--version'], { cwd: workspace, env })
+    const versionResult = await runCommand(dshBinary, ['--version'], { cwd: workspace, env })
     requireSuccess('dsh --version', versionResult)
     const actualDshVersion = versionResult.stdout.trim()
     if (actualDshVersion !== dshVersion) {
       throw new Error(`dsh version mismatch: expected ${dshVersion}, got ${actualDshVersion}`)
     }
 
-    const beforeDump = runCommand(dshBinary, ['--profile', 'web', '--dump-config'], { cwd: workspace, env })
+    const beforeDump = await runCommand(dshBinary, ['--profile', 'web', '--dump-config'], { cwd: workspace, env })
     requireSuccess('pre-install dump-config', beforeDump)
     const beforeDefaults = {
       agentDefaultModel: configBlock(beforeDump.stdout, 'agent-default-model'),
       web: configBlock(beforeDump.stdout, 'web'),
     }
 
-    const add = runCommand(dshBinary, [
-      'plugin', '--profile', 'web', 'add', `link:${REPO_ROOT}`,
+    const add = await runCommand(dshBinary, [
+      'plugin', '--profile', 'web', 'add', pluginSpec,
     ], { cwd: workspace, env })
-    requireSuccess('local plugin install', add)
+    requireSuccess('local plugin install', add, 'compatibility')
 
-    const afterDump = runCommand(dshBinary, ['--profile', 'web', '--dump-config'], { cwd: workspace, env })
-    requireSuccess('post-install dump-config', afterDump)
+    const afterDump = await runCommand(dshBinary, ['--profile', 'web', '--dump-config'], { cwd: workspace, env })
+    requireSuccess('post-install dump-config', afterDump, 'compatibility')
     const afterDefaults = {
-      agentDefaultModel: configBlock(afterDump.stdout, 'agent-default-model'),
-      web: configBlock(afterDump.stdout, 'web'),
+      agentDefaultModel: configBlock(afterDump.stdout, 'agent-default-model', 'compatibility'),
+      web: configBlock(afterDump.stdout, 'web', 'compatibility'),
     }
     if (beforeDefaults.agentDefaultModel !== afterDefaults.agentDefaultModel
       || beforeDefaults.web !== afterDefaults.web) {
-      throw new Error('agent-default-model or web changed after local plugin installation')
+      throw new CompatibilityCheckError('agent-default-model or web changed after local plugin installation')
     }
 
-    const pluginBlock = configBlock(afterDump.stdout, 'llm-openai-codex')
+    const pluginBlock = configBlock(afterDump.stdout, 'llm-openai-codex', 'compatibility')
     if (!/^    enableSearch: false$/mu.test(pluginBlock)
       || !/^    enableImageTool: false$/mu.test(pluginBlock)
       || !/^    enableImageGeneration: false$/mu.test(pluginBlock)) {
-      throw new Error('local plugin configuration did not retain all optional capabilities as false')
+      throw new CompatibilityCheckError('local plugin configuration did not retain all optional capabilities as false')
     }
 
-    const doctor = runCommand(dshBinary, [
+    const doctor = await runCommand(dshBinary, [
       'plugin', '--profile', 'web', 'exec', 'dsh-codex-connect', 'doctor', '--json',
     ], { cwd: workspace, env })
-    requireSuccess('plugin doctor', doctor)
+    requireSuccess('plugin doctor', doctor, 'compatibility')
     const doctorReport = parseOneLineJson(doctor.stdout, 'plugin doctor')
     assertDoctorJson(doctorReport, dshHome, REPO_ROOT)
 
@@ -189,9 +250,12 @@ async function main() {
   }
 }
 
-try {
-  await main()
-} catch (error) {
-  process.stderr.write(`check-dsh-install: ${error instanceof Error ? error.message : String(error)}\n`)
-  process.exitCode = 1
+const isMain = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (isMain) {
+  try {
+    await main()
+  } catch (error) {
+    process.stderr.write(`check-dsh-install: ${error instanceof Error ? error.message : String(error)}\n`)
+    process.exitCode = installCheckExitCode(error)
+  }
 }
