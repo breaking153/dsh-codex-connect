@@ -4,6 +4,7 @@ import { createModels, defaultProviderAuthContext } from '@earendil-works/pi-ai'
 import type { Context as PiContext, MutableModels, Provider, SimpleStreamOptions } from '@earendil-works/pi-ai'
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex'
 import { resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import { deepEqualJson } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { ResolvedPiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
@@ -112,7 +113,11 @@ export function createOpenAICodexProfile(
   fastMode?: FastModeRegistry,
   proxyManager?: OpenAICodexProxyManager,
   resolveProxyUrl?: () => string | undefined,
+  contextWindowOverrides?: Readonly<Record<string, number>> | undefined,
 ): ResolvedPiAiProviderProfile {
+  const effectiveProvider = contextWindowOverrides === undefined
+    ? provider
+    : withOpenAICodexContextWindowOverrides(provider, contextWindowOverrides)
   return {
     provider: OPENAI_CODEX_PROVIDER,
     displayName: 'OpenAI Codex',
@@ -123,7 +128,37 @@ export function createOpenAICodexProfile(
     requestImageMaxBytes: OPENAI_CODEX_REQUEST_IMAGE_MAX_BYTES,
     retryPolicy: resolveRetryPolicy(undefined, 'dsh-codex-connect retryPolicy'),
     configuredMaxTokens: new Map(),
-    piProvider: requestProvider(provider, fastMode, proxyManager, resolveProxyUrl),
+    piProvider: requestProvider(effectiveProvider, fastMode, proxyManager, resolveProxyUrl),
+  }
+}
+
+/**
+ * Detach one provider and replace the advertised context window for the
+ * configured model ids. Request streaming itself is unaffected: pi-ai streams
+ * the caller-supplied model, so only the metadata Harness reads for context
+ * budgeting and compaction changes.
+ */
+export function withOpenAICodexContextWindowOverrides(
+  provider: Provider,
+  overrides: Readonly<Record<string, number>>,
+): Provider {
+  const baselineModels = provider.getModels()
+  assertOpenAICodexContextWindowModelIds(overrides, baselineModels)
+  const replaced = baselineModels.map(model => {
+    const contextWindow = overrides[model.id]
+    return contextWindow === undefined ? model : { ...model, contextWindow }
+  })
+  return { ...provider, getModels: () => replaced }
+}
+
+/** Reject misspelled or unavailable catalog ids before accepting settings. */
+export function assertOpenAICodexContextWindowModelIds(
+  overrides: Readonly<Record<string, number | null>> | undefined,
+  catalog: readonly OpenAICodexModelCatalogEntry[],
+): void {
+  const ids = new Set(catalog.map(model => model.id))
+  for (const id of Object.keys(overrides ?? {})) {
+    if (!ids.has(id)) throw new TypeError(`OpenAI Codex contextWindowOverrides contains unknown model id "${id}"`)
   }
 }
 
@@ -140,12 +175,21 @@ export function createOpenAICodexAdapter(
   visibleModelIds?: () => readonly string[] | undefined,
   proxyManager?: OpenAICodexProxyManager,
   resolveProxyUrl?: () => string | undefined,
+  contextWindowOverrides?: () => Readonly<Record<string, number>> | undefined,
 ): PiAiAdapter {
   const provider = openaiCodexProvider()
-  const profiles = new Map<string, ResolvedPiAiProviderProfile>([[
-    OPENAI_CODEX_PROVIDER,
-    createOpenAICodexProfile(provider, fastMode, proxyManager, resolveProxyUrl),
-  ]])
+  let profiles: Map<string, ResolvedPiAiProviderProfile> | undefined
+  let previousOverrides: Readonly<Record<string, number>> | undefined
+  const currentProfiles = (): Map<string, ResolvedPiAiProviderProfile> => {
+    const overrides = contextWindowOverrides?.()
+    if (profiles === undefined || !deepEqualJson(previousOverrides, overrides)) {
+      const profile = createOpenAICodexProfile(provider, fastMode, proxyManager, resolveProxyUrl, overrides)
+      previousOverrides = overrides === undefined ? undefined : { ...overrides }
+      // PiAiAdapter keys snapshots by map identity; captured calls keep the old map.
+      profiles = new Map([[OPENAI_CODEX_PROVIDER, profile]])
+    }
+    return profiles
+  }
   const models: MutableModels = createModels({ credentials })
   models.setProvider(provider)
   class OpenAICodexAdapter extends PiAiAdapter {
@@ -158,7 +202,7 @@ export function createOpenAICodexAdapter(
     }
   }
   return new OpenAICodexAdapter({
-    profiles: () => profiles,
+    profiles: currentProfiles,
     resolveApiKey: async () => {
       const operation = async () => (await models.getAuth(OPENAI_CODEX_PROVIDER))?.auth.apiKey
       return proxyManager?.run(resolveProxyUrl?.(), operation) ?? operation()
