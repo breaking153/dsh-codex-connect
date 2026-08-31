@@ -5,7 +5,11 @@ import { OpenAICodexAccountStore } from '../src/client/account-store.ts'
 import { OpenAICodexModelsCard } from '../src/client/OpenAICodexModelsCard.tsx'
 import { OpenAICodexSettings } from '../src/client/OpenAICodexSettings.tsx'
 import { en, zh } from '../src/client/locales.ts'
-import { OPENAI_CODEX_AUTH_LOGIN_PATH, OPENAI_CODEX_AUTH_LOGOUT_PATH } from '../src/auth-paths.ts'
+import {
+  OPENAI_CODEX_AUTH_ACCOUNTS_PATH,
+  OPENAI_CODEX_AUTH_LOGIN_PATH,
+  OPENAI_CODEX_AUTH_LOGOUT_PATH,
+} from '../src/auth-paths.ts'
 
 const t = (key: keyof typeof en) => en[key]
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 })
@@ -49,6 +53,32 @@ describe('shared Models and Plugin account state', () => {
     expect(screen.queryByText(en.usageLimits)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: en.hideQuota }))
     expect(screen.queryByRole('progressbar')).toBeNull()
+    account.dispose()
+  })
+
+  it('renders saved accounts in the Models provider card and switches only after explicit selection', async () => {
+    const first = { accountId: 'account-1', active: true, expires: 1_790_000_000_000, displayName: 'Work', email: 'work@example.com', profileSource: 'oauth' }
+    const second = { accountId: 'account-2', active: false, expires: 1_790_000_000_000, displayName: 'Personal', profileSource: 'file' }
+    const fetchMock = vi.fn(async (path: string, init?: RequestInit) => {
+      if (path === OPENAI_CODEX_AUTH_ACCOUNTS_PATH) {
+        expect(init?.method).toBe('POST')
+        expect(JSON.parse(String(init?.body))).toEqual({ accountId: 'account-2' })
+        return json({ status: 'signed-in', usage: { rateLimits: [] }, accounts: [
+          { ...first, active: false }, { ...second, active: true },
+        ] })
+      }
+      return json({ status: 'signed-in', usage: { rateLimits: [] }, accounts: [first, second] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const account = new OpenAICodexAccountStore()
+    render(<OpenAICodexModelsCard t={t} account={account} />)
+
+    const selector = await screen.findByRole('combobox', { name: en.savedAccounts }) as HTMLSelectElement
+    expect(selector.value).toBe('account-1')
+    expect(screen.getByRole('button', { name: en.addAccount })).toBeTruthy()
+    fireEvent.change(selector, { target: { value: 'account-2' } })
+    await waitFor(() => { expect(selector.value).toBe('account-2') })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     account.dispose()
   })
   it.each([['en', en], ['zh', zh]] as const)('renders direct authorization and plugin attribution in %s without duplicate account headings', async (_locale, messages) => {
@@ -170,7 +200,7 @@ describe('shared Models and Plugin account state', () => {
 
   it('shares one status read, synchronizes logout, and keeps advanced options off Models', async () => {
     const fetchMock = vi.fn(async (path: string) => path === OPENAI_CODEX_AUTH_LOGOUT_PATH
-      ? json({ ok: true }) : json({ status: 'signed-in', usage: { rateLimits: [] } }))
+      ? json({ status: 'signed-out', accounts: [] }) : json({ status: 'signed-in', usage: { rateLimits: [] } }))
     vi.stubGlobal('fetch', fetchMock)
     const account = new OpenAICodexAccountStore()
     const view = render(<>
@@ -219,7 +249,7 @@ describe('shared Models and Plugin account state', () => {
     let resolveStatus!: (value: Response) => void
     let signal: AbortSignal | undefined
     vi.stubGlobal('fetch', vi.fn((path: string, init?: RequestInit) => {
-      if (path === OPENAI_CODEX_AUTH_LOGOUT_PATH) return Promise.resolve(json({ ok: true }))
+      if (path === OPENAI_CODEX_AUTH_LOGOUT_PATH) return Promise.resolve(json({ status: 'signed-out', accounts: [] }))
       signal = init?.signal as AbortSignal
       return new Promise<Response>(resolve => { resolveStatus = resolve })
     }))

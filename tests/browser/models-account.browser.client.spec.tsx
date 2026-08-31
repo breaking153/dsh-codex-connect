@@ -153,7 +153,11 @@ describe('Models account navigation', () => {
     let signedIn = true
     let logoutCalls = 0
     vi.stubGlobal('fetch', async (path: string) => {
-      if (path === OPENAI_CODEX_AUTH_LOGOUT_PATH) { signedIn = false; logoutCalls++; return Response.json({ ok: true }) }
+      if (path === OPENAI_CODEX_AUTH_LOGOUT_PATH) {
+        signedIn = false
+        logoutCalls++
+        return Response.json({ status: 'signed-out', accounts: [] })
+      }
       return Response.json(signedIn ? { status: 'signed-in', usage: { rateLimits: [] } } : { status: 'signed-out' })
     })
     account = new OpenAICodexAccountStore()

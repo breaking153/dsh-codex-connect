@@ -35,6 +35,7 @@ Use the exact version above to keep the verified DSH and plugin pair reproducibl
 - Open and render Web sessions normally on DSH `0.1.2-alpha.2`; the Composer model directory now declares the nested session remote it uses.
 - Probe the hidden `codex-auto-review` approval reviewer with one explicit, synthetic no-op through `auto-review-probe`. The command does not add a selectable model, review a real command, refresh credentials, or enable Auto-review.
 - Keep the quick-start command pinned to the verified DSH `0.1.2-alpha.2` pair and avoid duplicate upstream Canary runs when npm channels resolve to the same DSH version.
+- Manage saved ChatGPT accounts, authorization, quota and shared Codex Connect settings from a compact **Openai-Codex** card in **Settings → Models**, while retaining the original Plugin settings entry.
 
 ### Version updates
 
@@ -68,7 +69,7 @@ Open **Settings → Models** and find **Openai-Codex**. This is the primary Alph
 
 The Models card carries the attribution “Powered by the Codex Connect plugin.” and provides ChatGPT authorization, reauthorization, sign-out and quota. Both settings pages share one in-memory account state and polling owner. **More settings** opens the proxy, model visibility, search, image and context-budget configuration form in a dialog; the original Plugin settings entry remains available. Both entries save to the same settings scope. Close or Escape discards unsaved dialog edits. The Models footer is optional: profiles without that settings section retain the existing Plugin entry.
 
-The compact Models row shows **Authorize** when signed out, or **Sign out** and **View quota** when signed in. Expanding quota shows only the server-reported usage rows, without repeating account controls. If browser authorization is interrupted, use **Continue authorization** in Models (**Reopen authorization** in Plugins) to resume the pending login, or **Cancel sign-in** and retry from either settings page or another trusted browser. Cancellation preserves an existing signed-in account. An abandoned authorization expires after 10 minutes by default; the plugin's `oauthTimeoutMs` configuration accepts 1,000–1,800,000 milliseconds and applies when the plugin loads. The separate 30-second wait for the initial authorization URL remains bounded. Neither cancellation nor expiry restarts DSH.
+The compact Models row shows **Authorize** when signed out, or **Add account**, **Sign out** and **View quota** when signed in. After another OAuth account is added, **Saved accounts** explicitly selects the account used by new Codex requests. Codex Connect does not switch accounts automatically based on quota. **Sign out** removes the selected account; when another saved account remains, it becomes active and the card stays signed in. Expanding quota shows only the server-reported usage rows, without repeating account controls. If browser authorization is interrupted, use **Continue authorization** in Models (**Reopen authorization** in Plugins) to resume the pending login, or **Cancel sign-in** and retry from either settings page or another trusted browser. Cancellation preserves existing saved accounts. An abandoned authorization expires after 10 minutes by default; the plugin's `oauthTimeoutMs` configuration accepts 1,000–1,800,000 milliseconds and applies when the plugin loads. The separate 30-second wait for the initial authorization URL remains bounded. Neither cancellation nor expiry restarts DSH.
 
 Expected result: a fresh installation shows **Authorize** in Models. The Plugin configuration fallback shows **Not signed in** and **Sign in with ChatGPT**.
 
@@ -82,7 +83,7 @@ The screenshot below shows the retained Plugin configuration fallback.
 
 Select **Authorize** in Models, or **Sign in with ChatGPT** in Plugin configuration, and complete the browser approval yourself. If an embedded WebView blocks the sign-in window, use the displayed **Open ChatGPT sign-in page** link to continue in your system browser. Do not copy an authorization URL, code, token, or account identifier into an issue, log, or configuration file.
 
-Expected result: Models shows **Sign out** and **View quota**. The Plugin configuration account area shows **Signed in**. The screenshot below shows that fallback view after a successful sign-in; it is not the initial sign-in screen.
+Expected result: Models shows **Add account**, **Sign out** and **View quota**. The Plugin configuration account area shows **Signed in**. The screenshot below shows that fallback view after a successful sign-in; it is not the initial sign-in screen.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/franksong2702/dsh-codex-connect/main/docs/assets/en/oauth-status.jpg" alt="English-localized Codex Connect signed-in state inside Harness plugin configuration" width="720">
@@ -277,7 +278,7 @@ To restore defaults, distinguish the settings layers:
 - `doctor` reads process and filesystem metadata only. `doctor --json` emits exactly one secret-free JSON document with schema version 1, package/version/Node metadata, credential-file state and safe mode, capabilities, conflict status, and hints. It omits the absolute credential path and OAuth, account, and expiry data.
 - `status --json` emits only signed-in or signed-out state with package metadata. `status --json` reads the credential only to determine sign-in state, but never prints credential contents or starts OAuth.
 - Alpha 4.10 users whose search histories fail with an unknown `web/openai-codex-search-llm-request` event can run `dsh-codex-connect migrate-history --json`, stop DSH, then apply the reported repair with `migrate-history --apply --confirm-stopped --json`. The command is dry-run by default, backs up every changed compressed JSONL artifact, and is dry-run only on Windows; see [MIGRATION.md](MIGRATION.md).
-- OAuth is stored separately at `$DSH_HOME/.openai-codex-auth.json` (`~/.dsh` by default). `~/.codex/auth.json` is never copied or modified. The parent directory and file use owner-only permissions where supported, writes are atomic, and refresh writes use a cross-process file lock.
+- OAuth is stored separately at `$DSH_HOME/.openai-codex-auth.json` (`~/.dsh` by default). `~/.codex/auth.json` is never copied or modified. The version-2 document records an active account and saved OAuth credentials; legacy version-1 single-account documents remain readable and migrate on the next successful credential write. The parent directory and file use owner-only permissions where supported, writes are atomic, and all credential mutations use a cross-process file lock. Browser routes return only non-secret account summaries, never tokens.
 - By default, the OAuth routes accept loopback browser requests only. When DSH runs on one device and you open it from another device on a trusted network, approve the browser address-bar origin explicitly on the device that runs DSH:
 
   ```sh

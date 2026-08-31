@@ -183,6 +183,19 @@ export {
   OPENAI_CODEX_PROVIDER,
   openAICodexAuthPath,
 } from './store.ts'
+export type {
+  OpenAICodexAccountSelection,
+  OpenAICodexAccountSummary,
+} from './store.ts'
+export {
+  OPENAI_CODEX_ACCOUNT_PROFILES_FILENAME,
+  openAICodexAccountProfilesPath,
+  resolveOpenAICodexAccountProfiles,
+} from './account-profile.ts'
+export type {
+  OpenAICodexAccountProfile,
+  OpenAICodexAccountProfileSource,
+} from './account-profile.ts'
 export {
   DEFAULT_OPENAI_CODEX_SEARCH_CONTEXT_SIZE,
   DEFAULT_OPENAI_CODEX_SEARCH_MAX_OUTPUT_TOKENS,

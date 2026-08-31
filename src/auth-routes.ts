@@ -14,10 +14,11 @@ import {
 } from './usage.ts'
 import type { OpenAICodexUsage } from './usage.ts'
 import {
+  OPENAI_CODEX_AUTH_ACCOUNTS_PATH,
+  OPENAI_CODEX_AUTH_CANCEL_PATH,
   OPENAI_CODEX_AUTH_LOGIN_PATH,
   OPENAI_CODEX_AUTH_LOGOUT_PATH,
   OPENAI_CODEX_AUTH_STATUS_PATH,
-  OPENAI_CODEX_AUTH_CANCEL_PATH,
 } from './auth-paths.ts'
 import {
   OPENAI_CODEX_TRUSTED_ORIGINS_FILENAME,
@@ -29,10 +30,11 @@ import { OPENAI_CODEX_FAST_MODE_PATH } from './fast-mode-paths.ts'
 import type { OpenAICodexProxyManager } from './provider-proxy.ts'
 
 export {
+  OPENAI_CODEX_AUTH_ACCOUNTS_PATH,
+  OPENAI_CODEX_AUTH_CANCEL_PATH,
   OPENAI_CODEX_AUTH_LOGIN_PATH,
   OPENAI_CODEX_AUTH_LOGOUT_PATH,
   OPENAI_CODEX_AUTH_STATUS_PATH,
-  OPENAI_CODEX_AUTH_CANCEL_PATH,
 } from './auth-paths.ts'
 export { OPENAI_CODEX_FAST_MODE_PATH } from './fast-mode-paths.ts'
 
@@ -135,13 +137,23 @@ export class OpenAICodexWebAuth {
   }
 
   /** Cancel any callback listener, wait for quiescence, then delete the credential. */
-  async signOut(): Promise<void> {
+  async signOut(): Promise<OpenAICodexWebAuthStatus> {
     await this.finishLogin('logout')
+    return this.state
   }
 
   /** Cancel the pending authorization and retain any already stored account. */
-  async cancel(): Promise<void> {
+  async cancel(): Promise<OpenAICodexWebAuthStatus> {
     await this.finishLogin('cancel')
+    return this.state
+  }
+
+  /** Cancel pending OAuth, explicitly select one saved account, and refresh public state. */
+  async activate(accountId: string): Promise<OpenAICodexWebAuthStatus> {
+    await this.finishLogin('cancel')
+    await this.store.activate(accountId)
+    this.state = await this.readStoredStatus()
+    return this.state
   }
 
   /** Stop the owned callback listener during plugin disposal. */
@@ -159,7 +171,7 @@ export class OpenAICodexWebAuth {
       this.challenge = undefined
       if (action === 'logout') {
         await logoutOpenAICodex(this.store)
-        this.state = { status: 'signed-out' }
+        this.state = await this.readStoredStatus()
       } else if (action === 'cancel') {
         this.state = await this.readStoredStatus()
       }
@@ -452,6 +464,16 @@ function fastModeBody(value: unknown): { sessionId: string; enabled: boolean } |
     : undefined
 }
 
+function accountSwitchBody(value: unknown): { accountId: string } | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (Object.keys(record).length !== 1) return undefined
+  const accountId = record['accountId']
+  return typeof accountId === 'string' && accountId.length > 0 && accountId.length <= 256
+    ? { accountId }
+    : undefined
+}
+
 /** Register the plugin-owned OAuth routes when the Web server is composed. */
 export function registerOpenAICodexAuthRoutes(
   ctx: Context,
@@ -469,6 +491,10 @@ export function registerOpenAICodexAuthRoutes(
     ? new OpenAICodexTrustedOriginsStore(join(dirname(storedFilename), OPENAI_CODEX_TRUSTED_ORIGINS_FILENAME))
     : new OpenAICodexTrustedOriginsStore())
   ctx.effect(() => {
+    const stateWithAccounts = async (status: OpenAICodexWebAuthStatus) => ({
+      ...status,
+      accounts: await store.accounts(),
+    })
     const authorize = async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
       const decision = await trustedRequestDecision(req, trustedOrigins)
       if (decision.trusted) return true
@@ -482,7 +508,7 @@ export function registerOpenAICodexAuthRoutes(
         handler: async (req, res) => {
           if (req.method !== 'GET') return json(res, 405, { error: 'method not allowed' })
           if (!await authorize(req, res)) return
-          json(res, 200, await auth.status())
+          json(res, 200, await stateWithAccounts(await auth.status()))
         },
       }),
       ctx.webServer.register({
@@ -505,8 +531,7 @@ export function registerOpenAICodexAuthRoutes(
           if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
           if (!await authorize(req, res)) return
           try {
-            await auth.cancel()
-            json(res, 200, await auth.status())
+            json(res, 200, await stateWithAccounts(await auth.cancel()))
           } catch (error: unknown) {
             json(res, 500, { error: safeMessage(error) })
           }
@@ -519,10 +544,35 @@ export function registerOpenAICodexAuthRoutes(
           if (req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
           if (!await authorize(req, res)) return
           try {
-            await auth.signOut()
-            json(res, 200, { ok: true })
+            json(res, 200, await stateWithAccounts(await auth.signOut()))
           } catch (error: unknown) {
             json(res, 500, { error: safeMessage(error) })
+          }
+        },
+      }),
+      ctx.webServer.register({
+        kind: 'exact',
+        path: OPENAI_CODEX_AUTH_ACCOUNTS_PATH,
+        handler: async (req, res) => {
+          if (req.method !== 'GET' && req.method !== 'POST') return json(res, 405, { error: 'method not allowed' })
+          if (!await authorize(req, res)) return
+          if (req.method === 'GET') return json(res, 200, { accounts: await store.accounts() })
+          const type = header(req, 'content-type')
+          if (type === undefined || !/^application\/json(?:\s*;|$)/iu.test(type.trim())) {
+            return json(res, 415, { error: 'unsupported content type' })
+          }
+          try {
+            const body = accountSwitchBody(await readFastModeBody(req))
+            if (body === undefined) return json(res, 400, { error: 'invalid input' })
+            const status = await auth.activate(body.accountId)
+            return json(res, 200, await stateWithAccounts(status))
+          } catch (error: unknown) {
+            if (error instanceof RangeError) return json(res, 413, { error: 'request body too large' })
+            if (error instanceof TypeError) return json(res, 400, { error: 'invalid input' })
+            if (error instanceof Error && error.message === 'openai-codex: account was not found') {
+              return json(res, 404, { error: 'account not found' })
+            }
+            return json(res, 500, { error: safeMessage(error) })
           }
         },
       }),
