@@ -1,6 +1,21 @@
 /** Shared, in-memory OAuth UI state. No token or browser storage is used here. */
 import type { OpenAICodexUsage } from '../usage.ts'
-import { OPENAI_CODEX_AUTH_CANCEL_PATH, OPENAI_CODEX_AUTH_LOGIN_PATH, OPENAI_CODEX_AUTH_LOGOUT_PATH, OPENAI_CODEX_AUTH_STATUS_PATH } from '../auth-paths.ts'
+import {
+  OPENAI_CODEX_AUTH_ACCOUNTS_PATH,
+  OPENAI_CODEX_AUTH_CANCEL_PATH,
+  OPENAI_CODEX_AUTH_LOGIN_PATH,
+  OPENAI_CODEX_AUTH_LOGOUT_PATH,
+  OPENAI_CODEX_AUTH_STATUS_PATH,
+} from '../auth-paths.ts'
+
+export interface AccountSummary {
+  accountId: string
+  active: boolean
+  expires: number
+  displayName: string
+  email?: string
+  profileSource: 'file' | 'oauth' | 'local' | 'generated'
+}
 
 export type AccountStatus =
   | { status: 'loading' }
@@ -14,15 +29,24 @@ export type AccountStatus =
 export interface AccountSnapshot {
   status: AccountStatus
   busy: boolean
+  accounts: readonly AccountSummary[]
   loginUrl?: string
 }
 
+type AccountServerState = AccountStatus & { accounts?: AccountSummary[] }
+
 class AccountRequestError extends Error {}
 
-async function request<T>(path: string, method = 'GET', signal?: AbortSignal): Promise<T> {
+async function request<T>(path: string, method = 'GET', signal?: AbortSignal, body?: unknown): Promise<T> {
   const response = await fetch(path, {
-    method, headers: { accept: 'application/json' }, credentials: 'same-origin',
+    method,
+    headers: {
+      accept: 'application/json',
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
+    credentials: 'same-origin',
     ...signal === undefined ? {} : { signal },
+    ...body === undefined ? {} : { body: JSON.stringify(body) },
   })
   const value: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
@@ -35,7 +59,7 @@ async function request<T>(path: string, method = 'GET', signal?: AbortSignal): P
 
 /** One account state per browser-plugin instance; subscribers share requests and timers. */
 export class OpenAICodexAccountStore {
-  private snapshot: AccountSnapshot = { status: { status: 'loading' }, busy: false }
+  private snapshot: AccountSnapshot = { status: { status: 'loading' }, busy: false, accounts: [] }
   private readonly listeners = new Set<() => void>()
   private controller: AbortController | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -66,6 +90,19 @@ export class OpenAICodexAccountStore {
       : { status: 'error', message: error instanceof Error ? error.message : 'Account request failed' }
   }
 
+  private splitServerState(response: AccountServerState): Pick<AccountSnapshot, 'status' | 'accounts'> {
+    const { accounts, ...status } = response
+    return {
+      status: status as AccountStatus,
+      accounts: Array.isArray(accounts) ? accounts : [],
+    }
+  }
+
+  private async readServerState(signal?: AbortSignal): Promise<Pick<AccountSnapshot, 'status' | 'accounts'>> {
+    const response = await request<AccountServerState>(OPENAI_CODEX_AUTH_STATUS_PATH, 'GET', signal)
+    return this.splitServerState(response)
+  }
+
   private stopPolling(): void {
     clearTimeout(this.timer)
     this.timer = undefined
@@ -88,13 +125,13 @@ export class OpenAICodexAccountStore {
     const controller = new AbortController()
     this.controller = controller
     try {
-      const status = await request<AccountStatus>(OPENAI_CODEX_AUTH_STATUS_PATH, 'GET', controller.signal)
+      const { status, accounts } = await this.readServerState(controller.signal)
       if (!controller.signal.aborted) this.publish({
-        status, busy: false,
+        status, accounts, busy: false,
         ...status.status === 'signing-in' && this.snapshot.loginUrl !== undefined ? { loginUrl: this.snapshot.loginUrl } : {},
       })
     } catch (error: unknown) {
-      if (!controller.signal.aborted) this.publish({ status: this.failure(error), busy: false })
+      if (!controller.signal.aborted) this.publish({ status: this.failure(error), busy: false, accounts: this.snapshot.accounts })
     } finally {
       if (this.controller === controller) {
         this.controller = undefined
@@ -110,15 +147,15 @@ export class OpenAICodexAccountStore {
     const popup = window.open('about:blank', '_blank')
     this.popup = popup
     if (popup !== null) popup.opener = null
-    this.publish({ status: { status: 'signing-in' }, busy: true })
+    this.publish({ status: { status: 'signing-in' }, busy: true, accounts: this.snapshot.accounts })
     try {
       const challenge = await request<{ url: string }>(OPENAI_CODEX_AUTH_LOGIN_PATH, 'POST')
       if (this.disposed) { popup?.close(); return }
       if (popup !== null) popup.location.replace(challenge.url)
-      this.publish({ status: { status: 'signing-in' }, busy: false, loginUrl: challenge.url })
+      this.publish({ status: { status: 'signing-in' }, busy: false, accounts: this.snapshot.accounts, loginUrl: challenge.url })
     } catch (error: unknown) {
       popup?.close()
-      this.publish({ status: this.failure(error), busy: false })
+      this.publish({ status: this.failure(error), busy: false, accounts: this.snapshot.accounts })
       if (error instanceof AccountRequestError && error.message === 'OpenAI Codex sign-in cancelled') {
         // Another browser can cancel the shared server operation while this login request is pending.
         await this.refresh()
@@ -133,12 +170,12 @@ export class OpenAICodexAccountStore {
   async cancel(): Promise<void> {
     if (this.disposed || this.snapshot.busy) return
     this.stopPolling()
-    this.publish({ status: this.snapshot.status, busy: true })
+    this.publish({ ...this.snapshot, busy: true })
     try {
-      const status = await request<AccountStatus>(OPENAI_CODEX_AUTH_CANCEL_PATH, 'POST')
-      this.publish({ status, busy: false })
+      const response = await request<AccountServerState>(OPENAI_CODEX_AUTH_CANCEL_PATH, 'POST')
+      this.publish({ ...this.splitServerState(response), busy: false })
     } catch (error: unknown) {
-      this.publish({ status: this.failure(error), busy: false })
+      this.publish({ status: this.failure(error), busy: false, accounts: this.snapshot.accounts })
     } finally {
       this.schedule()
     }
@@ -148,12 +185,27 @@ export class OpenAICodexAccountStore {
   async signOut(): Promise<void> {
     if (this.disposed || this.snapshot.busy) return
     this.stopPolling()
-    this.publish({ status: this.snapshot.status, busy: true })
+    this.publish({ ...this.snapshot, busy: true })
     try {
-      await request<{ ok: true }>(OPENAI_CODEX_AUTH_LOGOUT_PATH, 'POST')
-      this.publish({ status: { status: 'signed-out' }, busy: false })
+      const response = await request<AccountServerState>(OPENAI_CODEX_AUTH_LOGOUT_PATH, 'POST')
+      this.publish({ ...this.splitServerState(response), busy: false })
     } catch (error: unknown) {
-      this.publish({ status: this.failure(error), busy: false })
+      this.publish({ status: this.failure(error), busy: false, accounts: this.snapshot.accounts })
+    }
+  }
+
+  /** Explicitly select one saved account and refresh its quota state. */
+  async activate(accountId: string): Promise<void> {
+    if (this.disposed || this.snapshot.busy || this.snapshot.accounts.some(account => account.accountId === accountId && account.active)) return
+    this.stopPolling()
+    this.publish({ ...this.snapshot, busy: true })
+    try {
+      const response = await request<AccountServerState>(OPENAI_CODEX_AUTH_ACCOUNTS_PATH, 'POST', undefined, { accountId })
+      this.publish({ ...this.splitServerState(response), busy: false })
+    } catch (error: unknown) {
+      this.publish({ status: this.failure(error), busy: false, accounts: this.snapshot.accounts })
+    } finally {
+      this.schedule()
     }
   }
 
@@ -164,6 +216,6 @@ export class OpenAICodexAccountStore {
     this.popup?.close()
     this.popup = null
     this.listeners.clear()
-    this.snapshot = { status: { status: 'loading' }, busy: false }
+    this.snapshot = { status: { status: 'loading' }, busy: false, accounts: [] }
   }
 }

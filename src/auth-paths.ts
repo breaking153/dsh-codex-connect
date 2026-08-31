@@ -8,3 +8,5 @@ export const OPENAI_CODEX_AUTH_LOGIN_PATH = '/plugins/dsh-openai-codex/auth/logi
 export const OPENAI_CODEX_AUTH_LOGOUT_PATH = '/plugins/dsh-openai-codex/auth/logout'
 /** Cancel only the pending authorization; never delete a stored credential. */
 export const OPENAI_CODEX_AUTH_CANCEL_PATH = '/plugins/dsh-openai-codex/auth/cancel'
+/** Enumerate saved accounts or explicitly switch the active account. */
+export const OPENAI_CODEX_AUTH_ACCOUNTS_PATH = '/plugins/dsh-openai-codex/auth/accounts'

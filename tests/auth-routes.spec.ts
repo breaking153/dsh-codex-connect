@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   OPENAI_CODEX_AUTH_LOGIN_PATH,
   OPENAI_CODEX_AUTH_LOGOUT_PATH,
+  OPENAI_CODEX_AUTH_ACCOUNTS_PATH,
   OpenAICodexWebAuth,
   OPENAI_CODEX_AUTH_STATUS_PATH,
   OPENAI_CODEX_AUTH_CANCEL_PATH,
@@ -40,7 +41,11 @@ vi.mock('../src/usage.ts', async importOriginal => ({
   readOpenAICodexRateLimits: mocked.usage,
 }))
 
-const store = {} as OpenAICodexCredentialStore
+const storeMethods = {
+  accounts: vi.fn(),
+  activate: vi.fn(),
+}
+const store = storeMethods as unknown as OpenAICodexCredentialStore
 const emptyTrustedOrigins = {
   has: async () => false,
 } as unknown as OpenAICodexTrustedOriginsStore
@@ -93,6 +98,8 @@ function request(options: {
   host?: string
   origin?: string
   fetchSite?: string
+  contentType?: string
+  body?: string
 }): IncomingMessage {
   return {
     method: options.method ?? 'GET',
@@ -101,7 +108,9 @@ function request(options: {
       host: options.host ?? '127.0.0.1:3081',
       ...options.origin === undefined ? {} : { origin: options.origin },
       ...options.fetchSite === undefined ? {} : { 'sec-fetch-site': options.fetchSite },
+      ...options.contentType === undefined ? {} : { 'content-type': options.contentType },
     },
+    ...options.body === undefined ? {} : { body: options.body },
   } as unknown as IncomingMessage
 }
 
@@ -125,6 +134,8 @@ beforeEach(() => {
   mocked.status.mockResolvedValue({ authenticated: false })
   mocked.logout.mockResolvedValue(undefined)
   mocked.usage.mockResolvedValue({ rateLimits: [] })
+  storeMethods.accounts.mockResolvedValue([])
+  storeMethods.activate.mockResolvedValue({ accountId: 'account-2', active: true, expires: Date.now() + 60_000 })
 })
 
 afterEach(async () => {
@@ -148,7 +159,7 @@ describe('OpenAI Codex Web OAuth boundary', () => {
     const valid = response()
     await route.handler(request({ method: 'POST', origin: 'http://127.0.0.1:3081', fetchSite: 'same-origin' }), valid)
     expect(valid.observed.status).toBe(200)
-    expect(JSON.parse(valid.observed.body!)).toEqual({ status: 'signed-out' })
+    expect(JSON.parse(valid.observed.body!)).toEqual({ status: 'signed-out', accounts: [] })
     expect(mocked.logout).not.toHaveBeenCalled()
   })
   it('returns a stable remote-origin error until the exact effective origin is trusted', async () => {
@@ -186,6 +197,7 @@ describe('OpenAI Codex Web OAuth boundary', () => {
     ['login', OPENAI_CODEX_AUTH_LOGIN_PATH, 'POST'],
     ['logout', OPENAI_CODEX_AUTH_LOGOUT_PATH, 'POST'],
     ['cancel', OPENAI_CODEX_AUTH_CANCEL_PATH, 'POST'],
+    ['accounts', OPENAI_CODEX_AUTH_ACCOUNTS_PATH, 'GET'],
   ] as const)('applies the remote-origin boundary to %s', async (_label, path, method) => {
     const route = captureRoutes().find(candidate => candidate.path === path)
     if (route === undefined) throw new Error(`${path} route was not registered`)
@@ -248,6 +260,52 @@ describe('OpenAI Codex Web OAuth boundary', () => {
 
     expect(res.observed.status).toBe(200)
     expect(mocked.status).toHaveBeenCalled()
+  })
+
+  it('lists non-secret account summaries and explicitly switches a saved account', async () => {
+    const accounts = [
+      { accountId: 'account-1', active: false, expires: 1_790_000_000_000, displayName: 'Work', profileSource: 'file' },
+      { accountId: 'account-2', active: true, expires: 1_790_000_000_000, displayName: 'Personal', email: 'me@example.com', profileSource: 'oauth' },
+    ]
+    storeMethods.accounts.mockResolvedValue(accounts)
+    mocked.status.mockResolvedValue({ authenticated: true })
+    const route = captureRoutes().find(candidate => candidate.path === OPENAI_CODEX_AUTH_ACCOUNTS_PATH)!
+
+    const listed = response()
+    await route.handler(request({ method: 'GET' }), listed)
+    expect(listed.observed.status).toBe(200)
+    expect(JSON.parse(listed.observed.body!)).toEqual({ accounts })
+
+    const switched = response()
+    await route.handler(request({
+      method: 'POST',
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify({ accountId: 'account-2' }),
+    }), switched)
+    expect(switched.observed.status).toBe(200)
+    expect(storeMethods.activate).toHaveBeenCalledWith('account-2')
+    expect(JSON.parse(switched.observed.body!)).toEqual({
+      status: 'signed-in',
+      usage: { rateLimits: [] },
+      accounts,
+    })
+  })
+
+  it('rejects malformed account switches and reports an unknown saved account', async () => {
+    const route = captureRoutes().find(candidate => candidate.path === OPENAI_CODEX_AUTH_ACCOUNTS_PATH)!
+    const wrongType = response()
+    await route.handler(request({ method: 'POST', body: '{"accountId":"account-2"}' }), wrongType)
+    expect(wrongType.observed.status).toBe(415)
+
+    const malformed = response()
+    await route.handler(request({ method: 'POST', contentType: 'application/json', body: '{"accountId":""}' }), malformed)
+    expect(malformed.observed.status).toBe(400)
+
+    storeMethods.activate.mockRejectedValueOnce(new Error('openai-codex: account was not found'))
+    const missing = response()
+    await route.handler(request({ method: 'POST', contentType: 'application/json', body: '{"accountId":"missing"}' }), missing)
+    expect(missing.observed.status).toBe(404)
+    expect(JSON.parse(missing.observed.body!)).toEqual({ error: 'account not found' })
   })
 
   it('reuses one login operation and one HTTPS challenge across concurrent callers', async () => {

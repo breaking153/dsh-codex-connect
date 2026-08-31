@@ -213,7 +213,7 @@ describe('OpenAI Codex Plugin configuration card', () => {
         })
       }
       expect(path).toBe(OPENAI_CODEX_AUTH_LOGOUT_PATH)
-      return json({ ok: true })
+      return json({ status: 'signed-out', accounts: [] })
     })
     vi.stubGlobal('fetch', fetchMock)
 
