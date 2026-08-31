@@ -2,7 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { formatOpenAICodexResetAt, OpenAICodexSettings } from '../src/client/OpenAICodexSettings.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import type { OpenAICodexSettingsKey } from '../src/client/locales.ts'
@@ -14,6 +14,7 @@ import {
   OPENAI_CODEX_AUTH_STATUS_PATH,
 } from '../src/auth-paths.ts'
 import { OPENAI_CODEX_MODEL_CATALOG_PATH } from '../src/model-contract.ts'
+import { modelCatalogFixture } from './model-catalog-fixture.ts'
 import {
   OPENAI_CODEX_PROXY_DETECT_PATH,
   OPENAI_CODEX_PROXY_TEST_PATH,
@@ -81,6 +82,7 @@ function settingsScopeFixture(writable = true): {
         return () => { listeners.delete(listener) }
       },
       set,
+      mutate: vi.fn(async () => { throw new Error('This fixture supports single-field settings writes only.') }),
       unset: vi.fn(async () => undefined),
     },
   }
@@ -131,7 +133,7 @@ describe('OpenAI Codex Plugin configuration card', () => {
     expect(login.style.color).toBe('var(--dsw-alias-label-primary-foreground)')
     fireEvent.click(login)
 
-    expect(await screen.findByText(en.popupBlockedFallback)).toBeTruthy()
+    expect(await screen.findByText(en.authorizationHelp)).toBeTruthy()
     const link = screen.getByRole('link', { name: en.openLoginInBrowser }) as HTMLAnchorElement
     expect(link.href).toBe('https://auth.openai.com/authorize')
     expect(link.target).toBe('_blank')
@@ -307,7 +309,7 @@ describe('OpenAI Codex Plugin configuration card', () => {
 
   it('stages, discards, and saves optional capability settings in the same card', async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request): Promise<Response> => requestPath(input) === OPENAI_CODEX_MODEL_CATALOG_PATH
-      ? json([{ id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' }, { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }])
+      ? json(modelCatalogFixture([{ id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' }, { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }]))
       : json({ status: 'signed-out' }))
     const { scope, set } = settingsScopeFixture()
     vi.stubGlobal('fetch', fetchMock)
@@ -355,7 +357,7 @@ describe('OpenAI Codex Plugin configuration card', () => {
       { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra' },
     ]
     const fetchMock = vi.fn(async (input: string | URL | Request): Promise<Response> => requestPath(input) === OPENAI_CODEX_MODEL_CATALOG_PATH
-      ? json(availableModels)
+      ? json(modelCatalogFixture(availableModels))
       : json({ status: 'signed-out' }))
     const { scope, set } = settingsScopeFixture()
     vi.stubGlobal('fetch', fetchMock)
@@ -382,7 +384,7 @@ describe('OpenAI Codex Plugin configuration card', () => {
     const candidate = 'http://127.0.0.1:7897'
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
       const path = requestPath(input)
-      if (path === OPENAI_CODEX_MODEL_CATALOG_PATH) return json([{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }])
+      if (path === OPENAI_CODEX_MODEL_CATALOG_PATH) return json(modelCatalogFixture([{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }]))
       if (path === OPENAI_CODEX_AUTH_STATUS_PATH) return json({ status: 'signed-out' })
       expect(path).toBe(OPENAI_CODEX_PROXY_DETECT_PATH)
       expect(init?.method).toBe('POST')
