@@ -14,6 +14,8 @@ import type { FastModeRegistry } from './fast-mode.ts'
 import type { OpenAICodexModelCatalogEntry } from './model-contract.ts'
 import { isValidOpenAICodexContextBudget, openAICodexContextLimit } from './model-contract.ts'
 import type { OpenAICodexProxyManager } from './provider-proxy.ts'
+import { withOpenAICodexAccountFallback } from './account-fallback.ts'
+import type { OpenAICodexAccountFallbackEvent } from './account-fallback.ts'
 
 /** Return a detached copy of the complete pi-ai Codex model catalog. */
 export function openAICodexModelCatalog(): readonly OpenAICodexModelCatalogEntry[] {
@@ -185,14 +187,42 @@ export function createOpenAICodexAdapter(
   proxyManager?: OpenAICodexProxyManager,
   resolveProxyUrl?: () => string | undefined,
   contextWindowOverrides?: () => Readonly<Record<string, number>> | undefined,
+  enableAccountFallback?: () => boolean,
+  onAccountFallback?: (event: OpenAICodexAccountFallbackEvent) => void,
 ): PiAiAdapter {
   const provider = openaiCodexProvider()
+  const accountModels = new Map<string, MutableModels>()
+  const resolveAccountAccessToken = async (
+    store: OpenAICodexCredentialStore,
+    accountId: string,
+  ): Promise<string | undefined> => {
+    let scoped = accountModels.get(accountId)
+    if (scoped === undefined) {
+      scoped = createModels({ credentials: store.forAccount(accountId) })
+      scoped.setProvider(provider)
+      accountModels.set(accountId, scoped)
+    }
+    const operation = async () => (await scoped.getAuth(OPENAI_CODEX_PROVIDER))?.auth.apiKey
+    return proxyManager?.run(resolveProxyUrl?.(), operation) ?? operation()
+  }
   let profiles: Map<string, ResolvedPiAiProviderProfile> | undefined
   let previousOverrides: Readonly<Record<string, number>> | undefined
   const currentProfiles = (): Map<string, ResolvedPiAiProviderProfile> => {
     const overrides = contextWindowOverrides?.()
     if (profiles === undefined || !deepEqualJson(previousOverrides, overrides)) {
-      const profile = createOpenAICodexProfile(provider, fastMode, proxyManager, resolveProxyUrl, overrides)
+      const baseProfile = createOpenAICodexProfile(provider, fastMode, proxyManager, resolveProxyUrl, overrides)
+      const profile = enableAccountFallback === undefined
+        ? baseProfile
+        : {
+            ...baseProfile,
+            piProvider: withOpenAICodexAccountFallback(
+              baseProfile.piProvider,
+              credentials,
+              resolveAccountAccessToken,
+              enableAccountFallback,
+              onAccountFallback,
+            ),
+          }
       previousOverrides = overrides === undefined ? undefined : { ...overrides }
       // PiAiAdapter keys snapshots by map identity; captured calls keep the old map.
       profiles = new Map([[OPENAI_CODEX_PROVIDER, profile]])

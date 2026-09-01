@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { OpenAICodexAccountStore } from '../src/client/account-store.ts'
 import { OpenAICodexModelsCard } from '../src/client/OpenAICodexModelsCard.tsx'
 import { OpenAICodexSettings } from '../src/client/OpenAICodexSettings.tsx'
 import { en, zh } from '../src/client/locales.ts'
+import { DEFAULT_OPENAI_CODEX_SETTINGS, type OpenAICodexSettingsConfig } from '../src/settings-contract.ts'
 import {
   OPENAI_CODEX_AUTH_ACCOUNTS_PATH,
   OPENAI_CODEX_AUTH_LOGIN_PATH,
@@ -79,6 +81,37 @@ describe('shared Models and Plugin account state', () => {
     fireEvent.change(selector, { target: { value: 'account-2' } })
     await waitFor(() => { expect(selector.value).toBe('account-2') })
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    account.dispose()
+  })
+
+  it('keeps automatic fallback opt-in and saves it from the existing Models account card', async () => {
+    const accounts = [
+      { accountId: 'account-1', active: true, expires: 1_790_000_000_000, displayName: 'Work', profileSource: 'oauth' },
+      { accountId: 'account-2', active: false, expires: 1_790_000_000_000, displayName: 'Personal', profileSource: 'file' },
+    ] as const
+    vi.stubGlobal('fetch', async () => json({ status: 'signed-in', usage: { rateLimits: [] }, accounts }))
+    let snapshot: SettingsScopeSnapshot<OpenAICodexSettingsConfig> = {
+      status: 'ready', value: { ...DEFAULT_OPENAI_CODEX_SETTINGS }, base: { ...DEFAULT_OPENAI_CODEX_SETTINGS },
+      user: undefined, revision: 0, writable: true, mode: 'host',
+    }
+    const listeners = new Set<() => void>()
+    const set = vi.fn(async (field: keyof OpenAICodexSettingsConfig, value: unknown) => {
+      snapshot = { ...snapshot, value: { ...snapshot.value!, [field]: value }, revision: (snapshot.revision ?? 0) + 1 }
+      for (const listener of listeners) listener()
+    })
+    const scope: SettingsScope<OpenAICodexSettingsConfig> = {
+      getSnapshot: () => snapshot,
+      subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
+      set, unset: vi.fn(), mutate: vi.fn(),
+    }
+    const account = new OpenAICodexAccountStore()
+    render(<OpenAICodexModelsCard t={t} account={account} configScope={scope} />)
+
+    const toggle = await screen.findByRole('checkbox', { name: en.enableAccountFallback })
+    expect((toggle as HTMLInputElement).checked).toBe(false)
+    fireEvent.click(toggle)
+    await waitFor(() => { expect(set).toHaveBeenCalledWith('enableAccountFallback', true) })
+    expect((toggle as HTMLInputElement).checked).toBe(true)
     account.dispose()
   })
   it.each([['en', en], ['zh', zh]] as const)('renders direct authorization and plugin attribution in %s without duplicate account headings', async (_locale, messages) => {

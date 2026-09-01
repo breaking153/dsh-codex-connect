@@ -95,6 +95,44 @@ describe('OpenAICodexCredentialStore', () => {
     ])
   })
 
+  it('provides an account-scoped refresh view without activating that account', async () => {
+    const auth = await store()
+    await auth.modify(OPENAI_CODEX_PROVIDER, () => Promise.resolve(credential('access-one', 'account-1')))
+    await auth.modify(OPENAI_CODEX_PROVIDER, () => Promise.resolve(credential('access-two', 'account-2')))
+    await auth.activate('account-1')
+
+    const snapshot = await auth.snapshot()
+    expect(snapshot).toEqual({ activeAccountId: 'account-1', accountIds: ['account-1', 'account-2'] })
+    const scoped = auth.forAccount('account-2')
+    expect(await scoped.read(OPENAI_CODEX_PROVIDER)).toMatchObject({ access: 'access-two', accountId: 'account-2' })
+    await scoped.modify(OPENAI_CODEX_PROVIDER, current => Promise.resolve({
+      ...(current as OAuthCredential),
+      access: 'refreshed-two',
+    }))
+
+    expect(await auth.read(OPENAI_CODEX_PROVIDER)).toMatchObject({ access: 'access-one', accountId: 'account-1' })
+    expect(await scoped.read(OPENAI_CODEX_PROVIDER)).toMatchObject({ access: 'refreshed-two', accountId: 'account-2' })
+  })
+
+  it('conditionally activates and rolls back without overwriting a newer selection', async () => {
+    const auth = await store()
+    await auth.modify(OPENAI_CODEX_PROVIDER, () => Promise.resolve(credential('access-one', 'account-1')))
+    await auth.modify(OPENAI_CODEX_PROVIDER, () => Promise.resolve(credential('access-two', 'account-2')))
+    await auth.modify(OPENAI_CODEX_PROVIDER, () => Promise.resolve(credential('access-three', 'account-3')))
+    await auth.activate('account-1')
+
+    expect(await auth.activateIfActive('account-1', 'account-2')).toEqual({
+      activated: true,
+      activeAccountId: 'account-2',
+    })
+    await auth.activate('account-3')
+    expect(await auth.activateIfActive('account-2', 'account-1')).toEqual({
+      activated: false,
+      activeAccountId: 'account-3',
+    })
+    expect(await auth.read(OPENAI_CODEX_PROVIDER)).toMatchObject({ accountId: 'account-3' })
+  })
+
   it('reads the legacy single-account document and migrates it on the next write', async () => {
     const auth = await store()
     await writeFile(auth.filename, JSON.stringify({ version: 1, credential: credential() }), { mode: 0o600 })

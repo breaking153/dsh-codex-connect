@@ -80,6 +80,8 @@ export const DEFAULT_OPENAI_CODEX_SEARCH_MAX_OUTPUT_TOKENS = 10_000
 export interface OpenAICodexSettingsConfig {
   /** Model ids advertised in selectors; undefined advertises the full catalog. */
   models: string[] | undefined
+  /** Opt in to quota-only fallback across explicitly saved OAuth accounts. */
+  enableAccountFallback: boolean
   /** Route Codex Connect requests through the explicitly configured proxy. */
   enableProxy: boolean
   /** Credential-free HTTP(S) proxy origin; inactive while enableProxy is false. */
@@ -102,6 +104,7 @@ export interface OpenAICodexSettingsConfig {
 
 export const DEFAULT_OPENAI_CODEX_SETTINGS: Readonly<OpenAICodexSettingsConfig> = Object.freeze({
   models: undefined,
+  enableAccountFallback: false,
   enableProxy: false,
   proxyUrl: DEFAULT_OPENAI_CODEX_PROXY_URL,
   contextWindowOverrides: undefined,
@@ -146,6 +149,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function decodeOpenAICodexSettings(value: unknown): OpenAICodexSettingsConfig | undefined {
   if (!isRecord(value)) return undefined
   const models = value['models']
+  const enableAccountFallback = value['enableAccountFallback']
   const enableProxy = value['enableProxy']
   const proxyUrl = value['proxyUrl']
   const contextWindowOverrides = value['contextWindowOverrides']
@@ -157,6 +161,7 @@ export function decodeOpenAICodexSettings(value: unknown): OpenAICodexSettingsCo
   const searchContextSize = value['searchContextSize']
   const searchMaxOutputTokens = value['searchMaxOutputTokens']
   if (models !== undefined && (!Array.isArray(models) || models.some(model => typeof model !== 'string'))) return undefined
+  if (enableAccountFallback !== undefined && typeof enableAccountFallback !== 'boolean') return undefined
   if (enableProxy !== undefined && typeof enableProxy !== 'boolean') return undefined
   if (proxyUrl !== undefined && (typeof proxyUrl !== 'string' || !isValidOpenAICodexProxyUrl(proxyUrl))) return undefined
   if (contextWindowOverrides !== undefined && contextWindowOverrides !== null && !isValidOpenAICodexContextWindowOverrides(contextWindowOverrides)) return undefined
@@ -170,6 +175,7 @@ export function decodeOpenAICodexSettings(value: unknown): OpenAICodexSettingsCo
   const overrides = resolveOpenAICodexContextWindowOverrides(contextWindowOverrides)
   return {
     models: models === undefined ? undefined : [...new Set(models)],
+    enableAccountFallback: enableAccountFallback ?? false,
     enableProxy: enableProxy ?? false,
     proxyUrl: proxyUrl === undefined ? DEFAULT_OPENAI_CODEX_PROXY_URL : normalizeOpenAICodexProxyUrl(proxyUrl)!,
     contextWindowOverrides: overrides === undefined ? undefined : Object.freeze(overrides),
