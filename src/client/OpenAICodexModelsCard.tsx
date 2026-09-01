@@ -10,6 +10,7 @@ export type OpenAICodexModelsCardInjected = Required<Pick<OpenAICodexSettingsInj
 
 const buttonStyle: CSSProperties = { padding: '6px 14px', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 999, background: 'transparent', color: 'inherit', font: 'inherit', fontSize: 14, cursor: 'pointer' }
 const secondaryStyle: CSSProperties = { fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-secondary)' }
+const accountSelectStyle: CSSProperties = { minWidth: 180, maxWidth: '100%', padding: '7px 10px', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)', font: 'inherit', fontSize: 13 }
 
 /** Native modality contains keyboard focus and restores it to More settings on close. */
 function ConfigurationDialog({ t, configScope, onClose }: Pick<OpenAICodexModelsCardInjected, 't' | 'configScope'> & { onClose: () => void }) {
@@ -48,7 +49,9 @@ export function OpenAICodexModelsCard({ t, account, configScope }: OpenAICodexMo
   const detailsId = useId()
   const snapshot = useSyncExternalStore(account.subscribe, account.getSnapshot)
   const { status } = snapshot
+  const accounts = snapshot.accounts ?? []
   const label = accountStatusLabel(status.status, t)
+  const activeAccount = accounts.find(candidate => candidate.active)
   useEffect(() => { if (status.status !== 'signed-in') setExpanded(false) }, [status.status])
   return <div style={{ border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 12, padding: '12px 14px', color: 'var(--dsw-alias-label-primary)' }}>
     <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
@@ -56,12 +59,25 @@ export function OpenAICodexModelsCard({ t, account, configScope }: OpenAICodexMo
       <span aria-hidden="true" style={{ ...dotStyle(status.status), width: 8, height: 8 }} />
       <span role="status" style={{ ...secondaryStyle, flex: 1 }}>{label}</span>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginLeft: 'auto' }}>
+        {status.status === 'signed-in' && <button type="button" style={buttonStyle} disabled={snapshot.busy}
+          onClick={() => { void account.signIn() }}>{t('addAccount')}</button>}
         <AccountActions t={t} store={account} snapshot={snapshot} compact />
         {status.status === 'signed-in' && <button type="button" aria-expanded={expanded} aria-controls={detailsId}
           onClick={() => { setExpanded(!expanded) }} style={buttonStyle}>{t(expanded ? 'hideQuota' : 'viewQuota')}</button>}
       </div>
     </div>
     <div style={{ ...secondaryStyle, marginTop: 4 }}>{t('modelsProviderSupport')}</div>
+    {status.status === 'signed-in' && accounts.length > 0 && <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
+      <label htmlFor={`${detailsId}-account`} style={{ ...secondaryStyle, fontWeight: 500 }}>{t('savedAccounts')}</label>
+      <select id={`${detailsId}-account`} aria-label={t('savedAccounts')} style={accountSelectStyle}
+        value={activeAccount?.accountId ?? ''} disabled={snapshot.busy}
+        onChange={event => { void account.activate(event.currentTarget.value) }}>
+        {accounts.map(saved => <option key={saved.accountId} value={saved.accountId}>
+          {saved.email === undefined ? saved.displayName : `${saved.displayName} · ${saved.email}`}
+        </option>)}
+      </select>
+      <span style={secondaryStyle}>{t('activeAccountHelp')}</span>
+    </div>}
     <AccountFeedback t={t} snapshot={snapshot} />
     {expanded && status.status === 'signed-in' && <div id={detailsId} style={{ borderTop: '1px solid var(--dsw-alias-border-l2)', marginTop: 12, paddingTop: 12 }}>
       <UsageLimits t={t} usage={status.usage} heading={false} {...status.quotaError === undefined ? {} : { quotaError: status.quotaError }} />
