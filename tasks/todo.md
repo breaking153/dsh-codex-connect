@@ -1,6 +1,6 @@
 # Automatic account fallback checklist
 
-- [ ] Store snapshot, scoped credential view, and conditional activation tests
+- [x] Store snapshot, scoped credential view, and conditional activation tests
 - [ ] Strict terminal-quota classifier tests
 - [ ] No-replay-after-tool tests
 - [ ] Partial-prefix and bounded-attempt tests

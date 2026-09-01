@@ -42,6 +42,18 @@ export interface OpenAICodexAccountSummary {
 /** Internal account selection result. */
 export type OpenAICodexAccountSelection = Pick<OpenAICodexAccountSummary, 'accountId' | 'active' | 'expires'>
 
+/** Stable request-time account ordering with no credential material. */
+export interface OpenAICodexAccountSnapshot {
+  activeAccountId: string
+  accountIds: readonly string[]
+}
+
+/** Result of a lock-protected compare-and-swap account selection. */
+export interface OpenAICodexConditionalActivation {
+  activated: boolean
+  activeAccountId?: string
+}
+
 /** Whether a filesystem error reports an absent path. */
 function isENOENT(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
@@ -141,6 +153,10 @@ function cloneDocument(document: AuthDocument): AuthDocument {
   return structuredClone(document)
 }
 
+function assertAccountId(accountId: string): void {
+  if (accountId.length === 0 || accountId.length > 256) throw new TypeError('openai-codex: account id is invalid')
+}
+
 /**
  * Resolve the default OAuth document path.
  * @param dshHome - optional Harness-home override.
@@ -213,9 +229,64 @@ export class OpenAICodexCredentialStore implements CredentialStore {
     })
   }
 
+  /** Capture a credential-free account order for one bounded fallback request. */
+  async snapshot(): Promise<OpenAICodexAccountSnapshot | undefined> {
+    const document = await this.readDocument()
+    return document === undefined
+      ? undefined
+      : {
+          activeAccountId: document.activeAccountId,
+          accountIds: document.accounts.map(account => account.accountId as string),
+        }
+  }
+
+  /**
+   * Expose one saved account to pi-ai OAuth refresh without making it active.
+   * The view cannot create, select, delete, or replace another account.
+   */
+  forAccount(accountId: string): CredentialStore {
+    assertAccountId(accountId)
+    const owner = this
+    return {
+      async read(providerId) {
+        if (providerId !== OPENAI_CODEX_PROVIDER) return undefined
+        const account = (await owner.readDocument())?.accounts.find(candidate => candidate.accountId === accountId)
+        return account === undefined ? undefined : structuredClone(account)
+      },
+      async list() {
+        return await this.read(OPENAI_CODEX_PROVIDER) === undefined
+          ? []
+          : [{ providerId: OPENAI_CODEX_PROVIDER, type: 'oauth' }]
+      },
+      async modify(providerId, fn) {
+        if (providerId !== OPENAI_CODEX_PROVIDER) {
+          throw new Error(`openai-codex: credential store does not own provider "${providerId}"`)
+        }
+        await mkdir(dirname(owner.filename), { recursive: true, mode: 0o700 })
+        return withFileLock(owner.filename, async () => {
+          const document = await owner.readDocument()
+          const index = document?.accounts.findIndex(candidate => candidate.accountId === accountId) ?? -1
+          const current = index < 0 ? undefined : document!.accounts[index]
+          const candidate = await fn(current === undefined ? undefined : structuredClone(current))
+          if (candidate === undefined) return current === undefined ? undefined : structuredClone(current)
+          if (document === undefined || index < 0) throw new Error('openai-codex: account was not found')
+          const validated = parseCredential(candidate, owner.filename)
+          if (validated.accountId !== accountId) throw new Error('openai-codex: scoped refresh cannot replace another account')
+          const accounts = document.accounts.map(saved => structuredClone(saved))
+          accounts[index] = validated
+          await owner.writeDocument({ ...document, accounts })
+          return structuredClone(validated)
+        })
+      },
+      async delete() {
+        throw new Error('openai-codex: scoped credential view cannot delete accounts')
+      },
+    }
+  }
+
   /** Select the credential used by every subsequent Codex request. */
   async activate(accountId: string): Promise<OpenAICodexAccountSelection> {
-    if (accountId.length === 0 || accountId.length > 256) throw new TypeError('openai-codex: account id is invalid')
+    assertAccountId(accountId)
     await mkdir(dirname(this.filename), { recursive: true, mode: 0o700 })
     return withFileLock(this.filename, async () => {
       const document = await this.readDocument()
@@ -225,6 +296,30 @@ export class OpenAICodexCredentialStore implements CredentialStore {
         await this.writeDocument({ ...document, activeAccountId: accountId })
       }
       return { accountId, active: true, expires: account.expires }
+    })
+  }
+
+  /** Select `nextAccountId` only while `expectedAccountId` is still active. */
+  async activateIfActive(
+    expectedAccountId: string,
+    nextAccountId: string,
+  ): Promise<OpenAICodexConditionalActivation> {
+    assertAccountId(expectedAccountId)
+    assertAccountId(nextAccountId)
+    await mkdir(dirname(this.filename), { recursive: true, mode: 0o700 })
+    return withFileLock(this.filename, async () => {
+      const document = await this.readDocument()
+      if (document === undefined) return { activated: false }
+      if (document.activeAccountId !== expectedAccountId) {
+        return { activated: false, activeAccountId: document.activeAccountId }
+      }
+      if (!document.accounts.some(account => account.accountId === nextAccountId)) {
+        return { activated: false, activeAccountId: document.activeAccountId }
+      }
+      if (nextAccountId !== expectedAccountId) {
+        await this.writeDocument({ ...document, activeAccountId: nextAccountId })
+      }
+      return { activated: true, activeAccountId: nextAccountId }
     })
   }
 
