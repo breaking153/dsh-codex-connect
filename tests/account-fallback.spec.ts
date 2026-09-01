@@ -105,6 +105,32 @@ describe('automatic OpenAI Codex account fallback', () => {
     expect(JSON.stringify(events)).not.toContain('access-account')
   })
 
+  it('uses the bounded structured HTTP response code when pi-ai flattens the terminal error to prose', async () => {
+    const store = await storedAccounts()
+    const calls: string[] = []
+    const source = provider((_requestContext, options) => {
+      calls.push(options?.apiKey ?? 'missing')
+      if (options?.apiKey !== 'access-account-1') return terminal('ok')
+      const stream = createAssistantMessageEventStream()
+      void options?.fetch?.('https://chatgpt.com/backend-api/codex/responses').then(() => {
+        const failed = message('', 'error', 'You have hit your ChatGPT usage limit.')
+        stream.push({ type: 'start', partial: message('', 'stop') })
+        stream.push({ type: 'error', reason: 'error', error: failed })
+        stream.end(failed)
+      })
+      return stream
+    })
+    const wrapped = withOpenAICodexAccountFallback(source, store, resolveSavedAccess, () => true)
+
+    const output = await collect(wrapped.streamSimple(model(), context, {
+      apiKey: 'access-account-1',
+      fetch: async () => Response.json({ error: { code: 'usage_limit_reached', message: 'friendly prose' } }, { status: 429 }),
+    }))
+
+    expect(output.at(-1)?.type).toBe('done')
+    expect(calls).toEqual(['access-account-1', 'access-account-2'])
+  })
+
   it('does nothing when disabled, for generic 429, or after a tool call starts', async () => {
     const store = await storedAccounts()
     const calls = vi.fn()

@@ -22,7 +22,7 @@ When explicitly enabled, a Codex request that ends because the active ChatGPT ac
 
 The initial allowlist is `usage_limit_reached`, `usage_not_included`, and `insufficient_quota`. Matching is case-sensitive after structured JSON extraction or exact token extraction from the flattened provider error. `rate_limit_exceeded` is deliberately excluded because it may be transient.
 
-The installed pi-ai version currently flattens Codex HTTP error objects into `AssistantMessage.errorMessage`. Until pi-ai exposes structured response metadata on the terminal event, the compatibility extractor accepts only a standalone allowlisted machine-code token or an allowlisted `error.code`/`error.type` JSON field. Friendly prose alone does not authorize switching.
+The installed pi-ai version currently flattens Codex HTTP error objects into `AssistantMessage.errorMessage`. The wrapper therefore inspects a clone of a failed JSON response before pi-ai consumes it, with a hard 64 KiB body limit, and retains only an allowlisted `error.code`/`error.type`. The compatibility extractor also accepts an exact standalone allowlisted machine-code terminal error. Friendly prose alone does not authorize switching, and neither the response body nor prose is retained in audit records.
 
 ## State machine
 

@@ -6,6 +6,7 @@ import type { OpenAICodexCredentialStore } from './store.ts'
 
 const TERMINAL_QUOTA_CODES = new Set(['usage_limit_reached', 'usage_not_included', 'insufficient_quota'])
 const DEDUPLICATION_LIMIT = 4_096
+const ERROR_RESPONSE_LIMIT = 64 * 1024
 
 export interface OpenAICodexAccountFallbackEvent {
   type: 'candidate-rejected' | 'switched' | 'rollback' | 'completed' | 'exhausted' | 'superseded'
@@ -45,6 +46,47 @@ export function openAICodexTerminalQuotaCode(detail: string): string | undefined
 
 export function isOpenAICodexTerminalQuotaError(detail: string): boolean {
   return openAICodexTerminalQuotaCode(detail) !== undefined
+}
+
+async function boundedResponseText(response: Response): Promise<string | undefined> {
+  if (!response.headers.get('content-type')?.toLowerCase().includes('json')) return undefined
+  const declared = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > ERROR_RESPONSE_LIMIT) return undefined
+  const reader = response.clone().body?.getReader()
+  if (reader === undefined) return undefined
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    while (true) {
+      const next = await reader.read()
+      if (next.done) break
+      size += next.value.byteLength
+      if (size > ERROR_RESPONSE_LIMIT) {
+        await reader.cancel()
+        return undefined
+      }
+      chunks.push(next.value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(bytes)
+}
+
+async function terminalQuotaCodeFromResponse(response: Response): Promise<string | undefined> {
+  if (response.ok) return undefined
+  try {
+    const text = await boundedResponseText(response)
+    return text === undefined ? undefined : openAICodexTerminalQuotaCode(text)
+  } catch {
+    return undefined
+  }
 }
 
 function emptyUsage(): Usage {
@@ -221,9 +263,19 @@ export function withOpenAICodexAccountFallback(
           let sawTerminal = false
           let sawInnerEvent = false
           let retry = false
+          let responseQuotaCode: string | undefined
           let inner
           try {
-            inner = sourceStream.call(provider, model, originalContext, { ...options, ...access === undefined ? {} : { apiKey: access } })
+            const requestFetch: typeof globalThis.fetch = async (input, init) => {
+              const response = await (options?.fetch ?? globalThis.fetch)(input, init)
+              responseQuotaCode ??= await terminalQuotaCodeFromResponse(response)
+              return response
+            }
+            inner = sourceStream.call(provider, model, originalContext, {
+              ...options,
+              ...access === undefined ? {} : { apiKey: access },
+              fetch: requestFetch,
+            })
           } catch (error) {
             await rollback('replacement_start_failed')
             throw error
@@ -246,7 +298,9 @@ export function withOpenAICodexAccountFallback(
                 }
                 const currentContent = raw.content.map((block, index) => index === firstTextIndex && block.type === 'text' ? { ...block, text: firstText } : block)
                 let combined = combinedMessage(previous, raw, currentContent)
-                const quotaCode = event.type === 'error' && event.reason === 'error' ? openAICodexTerminalQuotaCode(event.error.errorMessage ?? '') : undefined
+                const quotaCode = event.type === 'error' && event.reason === 'error'
+                  ? responseQuotaCode ?? openAICodexTerminalQuotaCode(event.error.errorMessage ?? '')
+                  : undefined
                 const safeToRetry = quotaCode !== undefined && options?.signal?.aborted !== true && !hasToolCall(raw) && ![...openBlocks.values()].includes('toolCall')
 
                 if (safeToRetry) {
