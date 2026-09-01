@@ -137,7 +137,7 @@ describe('automatic OpenAI Codex account fallback', () => {
       return options?.apiKey === 'access-account-3' ? terminal('ok') : terminal('', 'usage_limit_reached')
     })
     const resolver = vi.fn(async (saved: OpenAICodexCredentialStore, accountId: string) => {
-      if (accountId === 'account-2') throw new Error('refresh failed with access-secret')
+      if (accountId === 'account-2') throw new Error('refresh failed')
       return resolveSavedAccess(saved, accountId)
     })
     const wrapped = withOpenAICodexAccountFallback(source, store, resolver, () => true)
