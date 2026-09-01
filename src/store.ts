@@ -240,6 +240,13 @@ export class OpenAICodexCredentialStore implements CredentialStore {
         }
   }
 
+  /** Identify the saved account that owns one already-resolved bearer token. */
+  async accountIdForAccessToken(access: string): Promise<string | undefined> {
+    if (access.length === 0) return undefined
+    const document = await this.readDocument()
+    return document?.accounts.find(account => account.access === access)?.accountId as string | undefined
+  }
+
   /**
    * Expose one saved account to pi-ai OAuth refresh without making it active.
    * The view cannot create, select, delete, or replace another account.
