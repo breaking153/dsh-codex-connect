@@ -169,6 +169,37 @@ describe('automatic OpenAI Codex account fallback', () => {
     expect((await store.snapshot())?.activeAccountId).toBe('account-3')
   })
 
+  it('lets only one concurrent session win the same conditional account switch', async () => {
+    const store = await storedAccounts()
+    const calls: string[] = []
+    const audit: OpenAICodexAccountFallbackEvent[] = []
+    const source = provider((_requestContext, options) => {
+      calls.push(options?.apiKey ?? 'missing')
+      return options?.apiKey === 'access-account-1' ? terminal('', 'usage_limit_reached') : terminal('ok')
+    })
+    let arrivals = 0
+    let release!: () => void
+    const bothReady = new Promise<void>(resolve => { release = resolve })
+    const resolver = async (saved: OpenAICodexCredentialStore, accountId: string) => {
+      arrivals += 1
+      if (arrivals === 2) release()
+      await bothReady
+      return resolveSavedAccess(saved, accountId)
+    }
+    const wrapped = withOpenAICodexAccountFallback(source, store, resolver, () => true, event => { audit.push(event) })
+
+    const [first, second] = await Promise.all([
+      collect(wrapped.streamSimple(model(), context, { apiKey: 'access-account-1', sessionId: 'session-a' })),
+      collect(wrapped.streamSimple(model(), context, { apiKey: 'access-account-1', sessionId: 'session-b' })),
+    ])
+
+    expect([first.at(-1)?.type, second.at(-1)?.type].sort()).toEqual(['done', 'error'])
+    expect(calls.filter(access => access === 'access-account-2')).toHaveLength(1)
+    expect(audit.filter(event => event.type === 'switched')).toHaveLength(1)
+    expect(audit.filter(event => event.type === 'superseded')).toHaveLength(1)
+    expect((await store.snapshot())?.activeAccountId).toBe('account-2')
+  })
+
   it('attempts every pinned account once and restores the original after exhaustion', async () => {
     const store = await storedAccounts(3)
     const calls: string[] = []
