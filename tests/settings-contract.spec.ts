@@ -12,6 +12,7 @@ import { Config } from '../src/index.ts'
 describe('OpenAI Codex proxy settings contract', () => {
   it('keeps fresh and legacy settings on direct connection', () => {
     expect(DEFAULT_OPENAI_CODEX_SETTINGS.enableProxy).toBe(false)
+    expect(DEFAULT_OPENAI_CODEX_SETTINGS.enableAccountFallback).toBe(false)
     expect(DEFAULT_OPENAI_CODEX_SETTINGS.proxyUrl).toBe(DEFAULT_OPENAI_CODEX_PROXY_URL)
     const legacy = decodeOpenAICodexSettings({
       enableSearch: false,
@@ -22,6 +23,7 @@ describe('OpenAI Codex proxy settings contract', () => {
       searchMaxOutputTokens: 10_000,
     })
     expect(legacy?.enableProxy).toBe(false)
+    expect(legacy?.enableAccountFallback).toBe(false)
     expect(legacy?.proxyUrl).toBe(DEFAULT_OPENAI_CODEX_PROXY_URL)
     expect(resolveOpenAICodexProxyUrl(legacy ?? {})).toBeUndefined()
   })

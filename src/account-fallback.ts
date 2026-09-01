@@ -170,7 +170,7 @@ export function withOpenAICodexAccountFallback(
   provider: Provider,
   credentials: OpenAICodexCredentialStore,
   resolveAccessToken: OpenAICodexFallbackAccessResolver,
-  enabled: () => boolean = () => true,
+  enabled: () => boolean = () => false,
   notify?: (event: OpenAICodexAccountFallbackEvent) => void,
 ): Provider {
   const sourceStream = provider.streamSimple
@@ -219,6 +219,7 @@ export function withOpenAICodexAccountFallback(
           let firstTextIndex: number | undefined
           let firstText = ''
           let sawTerminal = false
+          let sawInnerEvent = false
           let retry = false
           let inner
           try {
@@ -230,6 +231,7 @@ export function withOpenAICodexAccountFallback(
 
           try {
             for await (const event of inner) {
+              sawInnerEvent = true
               if (event.type === 'start') {
                 if (previous === undefined) output.push(event)
                 continue
@@ -334,12 +336,12 @@ export function withOpenAICodexAccountFallback(
               output.push(remapEvent(event, offset, previous, firstTextIndex, firstText))
             }
           } catch (error) {
-            await rollback('replacement_start_failed')
+            if (!sawInnerEvent) await rollback('replacement_start_failed')
             throw error
           }
           if (retry) continue
           if (!sawTerminal) {
-            await rollback('replacement_start_failed')
+            if (!sawInnerEvent) await rollback('replacement_start_failed')
             throw new Error('OpenAI Codex account fallback source ended without a terminal event')
           }
         }

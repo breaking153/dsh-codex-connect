@@ -67,6 +67,7 @@ const UNAVAILABLE_SNAPSHOT = {
 
 const CONFIG_FIELDS = [
   'models',
+  'enableAccountFallback',
   'contextWindowOverrides',
   'enableProxy',
   'proxyUrl',

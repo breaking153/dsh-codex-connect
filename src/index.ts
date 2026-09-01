@@ -182,9 +182,20 @@ export {
   openAICodexAuthPath,
 } from './store.ts'
 export type {
+  OpenAICodexAccountSnapshot,
+  OpenAICodexConditionalActivation,
   OpenAICodexAccountSelection,
   OpenAICodexAccountSummary,
 } from './store.ts'
+export {
+  isOpenAICodexTerminalQuotaError,
+  openAICodexTerminalQuotaCode,
+  withOpenAICodexAccountFallback,
+} from './account-fallback.ts'
+export type {
+  OpenAICodexAccountFallbackEvent,
+  OpenAICodexFallbackAccessResolver,
+} from './account-fallback.ts'
 export {
   OPENAI_CODEX_ACCOUNT_PROFILES_FILENAME,
   openAICodexAccountProfilesPath,
@@ -237,6 +248,8 @@ export interface Config {
   oauthTimeoutMs?: number
   /** Model ids advertised in selectors; omitted to advertise the full catalog. */
   models?: string[] | undefined
+  /** Opt in to terminal-quota fallback across saved ChatGPT accounts. */
+  enableAccountFallback?: boolean
   /** Route Codex Connect requests through proxyUrl after explicit activation. */
   enableProxy?: boolean
   /** Credential-free HTTP(S) proxy origin. */
@@ -268,6 +281,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   oauthTimeoutMs: z.number().step(1).min(1_000).max(1_800_000).default(OPENAI_CODEX_AUTHORIZATION_TIMEOUT_MS),
   models: z.union([z.const(undefined), z.array(z.string())]),
+  enableAccountFallback: z.boolean().default(false),
   enableProxy: z.boolean().default(false),
   proxyUrl: z.string().default(DEFAULT_OPENAI_CODEX_PROXY_URL),
   contextWindowOverrides: z.transform(
@@ -319,6 +333,10 @@ export function apply(ctx: Context, config: Config): void {
       proxyManager,
       resolveProviderProxyUrl,
       () => resolveOpenAICodexSettings(current()).contextWindowOverrides,
+      () => resolveOpenAICodexSettings(current()).enableAccountFallback,
+      (event) => {
+        ctx.logger.info(`dsh-codex-connect: account fallback ${JSON.stringify(event)}`)
+      },
     ),
   )
   ctx.inject(['webServer'], webCtx => {

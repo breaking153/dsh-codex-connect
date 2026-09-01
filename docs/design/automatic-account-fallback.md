@@ -32,7 +32,7 @@ The installed pi-ai version currently flattens Codex HTTP error objects into `As
 4. Choose the next stable, untried account from the pinned account order.
 5. Resolve/refresh that account through an account-scoped credential view without changing the active account.
 6. Compare-and-swap active account from the failed id to the candidate id.
-7. Append a redacted `openai-codex/account-fallback` session event and start the replacement stream with the resolved token.
+7. Emit a redacted, session-associated Host audit record and start the replacement stream with the resolved token.
 8. On pre-terminal replacement startup failure, compare-and-swap back from the candidate to the original and append the rollback result.
 9. On success, leave the selected account active and append completion. On exhaustion, surface the original terminal error.
 
@@ -40,7 +40,7 @@ Each request owns its attempted-account set. Concurrent sessions can independent
 
 ## User surface
 
-The opt-in setting is shown with account management in the existing Models/provider account card. The active account selector reflects a successful switch. Every transition is also a plugin-defined, ignorable session-log event so a switch is visible and auditable without modifying model-visible conversation history.
+The opt-in setting is shown with account management in the existing Models/provider account card. The active account selector reflects a successful switch. Every transition is also emitted as a structured, redacted Host log record associated with the request session. DSH `0.1.2-alpha.2` does not expose an ignorable plugin-event append API, so this implementation deliberately avoids writing an unknown required event into durable session history and avoids modifying model-visible conversation history.
 
 ## Acceptance tests
 
@@ -55,4 +55,3 @@ The opt-in setting is shown with account management in the existing Models/provi
 - Account attempts are bounded and non-repeating.
 - Audit events contain no credentials or raw error text.
 - A real terminal-quota account validation is recorded before merge; it is not replaceable by a fixture.
-

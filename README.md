@@ -152,6 +152,7 @@ The installed bundle is intentionally inert beyond model-provider registration:
 - id: llm-openai-codex
   config:
     enableProxy: false
+    enableAccountFallback: false
     enableSearch: false
     enableImageTool: false
     enableImageGeneration: false
@@ -169,6 +170,7 @@ Choose **Use this proxy** only after reviewing a candidate, then click **Save ch
 
 ### Enable only the capability you intend to use
 
+- `enableAccountFallback: true` opts into switching to the next saved ChatGPT account only after an allowlisted terminal quota code and only before any tool call starts. The original request context is retried without hidden continuation input; switches are redacted in Host logs.
 - `enableSearch: true` registers Codex as an available search provider. It does not select the profile's global search route.
 - `enableImageTool: true` enables `view_image` for approved local reads and public-network image fetches on vision-capable models.
 - `enableImageGeneration: true` enables the prompt-only image generation tool. Use the image generation capability included with your current GPT subscription. Codex Connect preserves the exact generated file in plugin-owned storage and saves a DSH attachment as the conversation preview.
@@ -233,6 +235,7 @@ Selecting Codex as the profile's global search route is another explicit change:
 | Field | Default | Values |
 |---|---:|---|
 | `models` | full catalog | Codex model id array; empty hides all entries |
+| `enableAccountFallback` | `false` | boolean; quota-only fallback across saved accounts |
 | `enableProxy` | `false` | boolean; direct connection unless explicitly enabled |
 | `proxyUrl` | `http://127.0.0.1:7890` (inactive placeholder) | Credential-free HTTP(S) proxy origin |
 | `contextWindowOverrides` | none | Per-model context-window override map; see below |

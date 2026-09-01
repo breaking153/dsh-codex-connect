@@ -113,7 +113,7 @@ describe('automatic OpenAI Codex account fallback', () => {
     expect(calls).toHaveBeenCalledOnce()
 
     const transient = provider((_requestContext, options) => { calls(options?.apiKey); return terminal('', 'HTTP 429 rate limit') })
-    await collect(withOpenAICodexAccountFallback(transient, store, resolveSavedAccess).streamSimple(model(), context, { apiKey: 'access-account-1' }))
+    await collect(withOpenAICodexAccountFallback(transient, store, resolveSavedAccess, () => true).streamSimple(model(), context, { apiKey: 'access-account-1' }))
 
     const tool = provider(() => {
       const stream = createAssistantMessageEventStream()
@@ -124,7 +124,7 @@ describe('automatic OpenAI Codex account fallback', () => {
       stream.end(failed)
       return stream
     })
-    await collect(withOpenAICodexAccountFallback(tool, store, resolveSavedAccess).streamSimple(model(), context, { apiKey: 'access-account-1' }))
+    await collect(withOpenAICodexAccountFallback(tool, store, resolveSavedAccess, () => true).streamSimple(model(), context, { apiKey: 'access-account-1' }))
     expect(calls).toHaveBeenCalledTimes(2)
     expect((await store.snapshot())?.activeAccountId).toBe('account-1')
   })
@@ -140,7 +140,7 @@ describe('automatic OpenAI Codex account fallback', () => {
       if (accountId === 'account-2') throw new Error('refresh failed with access-secret')
       return resolveSavedAccess(saved, accountId)
     })
-    const wrapped = withOpenAICodexAccountFallback(source, store, resolver)
+    const wrapped = withOpenAICodexAccountFallback(source, store, resolver, () => true)
 
     expect((await collect(wrapped.streamSimple(model(), context, { apiKey: 'access-account-1' }))).at(-1)?.type).toBe('done')
     expect(calls).toEqual(['access-account-1', 'access-account-3'])
@@ -155,7 +155,7 @@ describe('automatic OpenAI Codex account fallback', () => {
       if (throwOnSecond) throw new Error('startup failed')
       return terminal('ok')
     })
-    const wrapped = withOpenAICodexAccountFallback(source, store, resolveSavedAccess)
+    const wrapped = withOpenAICodexAccountFallback(source, store, resolveSavedAccess, () => true)
     expect((await collect(wrapped.streamSimple(model(), context, { apiKey: 'access-account-1' }))).at(-1)?.type).toBe('error')
     expect((await store.snapshot())?.activeAccountId).toBe('account-1')
 
@@ -165,7 +165,7 @@ describe('automatic OpenAI Codex account fallback', () => {
       await saved.activate('account-3')
       return access
     }
-    await collect(withOpenAICodexAccountFallback(source, store, racingResolver).streamSimple(model(), context, { apiKey: 'access-account-1' }))
+    await collect(withOpenAICodexAccountFallback(source, store, racingResolver, () => true).streamSimple(model(), context, { apiKey: 'access-account-1' }))
     expect((await store.snapshot())?.activeAccountId).toBe('account-3')
   })
 
@@ -173,7 +173,7 @@ describe('automatic OpenAI Codex account fallback', () => {
     const store = await storedAccounts(3)
     const calls: string[] = []
     const source = provider((_requestContext, options) => { calls.push(options?.apiKey ?? 'missing'); return terminal('', 'insufficient_quota') })
-    const output = await collect(withOpenAICodexAccountFallback(source, store, resolveSavedAccess).streamSimple(model(), context, { apiKey: 'access-account-1' }))
+    const output = await collect(withOpenAICodexAccountFallback(source, store, resolveSavedAccess, () => true).streamSimple(model(), context, { apiKey: 'access-account-1' }))
     expect(calls).toEqual(['access-account-1', 'access-account-2', 'access-account-3'])
     expect(output.at(-1)).toMatchObject({ type: 'error', error: { errorMessage: 'insufficient_quota' } })
     expect((await store.snapshot())?.activeAccountId).toBe('account-1')

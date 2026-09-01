@@ -7,6 +7,6 @@
 - [x] Preflight and rollback tests
 - [x] Concurrent/manual-switch race tests
 - [x] Redacted session audit tests
-- [ ] Settings and Models account-card tests
+- [x] Settings and Models account-card tests
 - [ ] Full lint, typecheck, test, build, and package checks
 - [ ] Real exhausted-account validation recorded before merge

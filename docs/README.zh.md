@@ -154,6 +154,7 @@ dsh plugin --profile web exec dsh-codex-connect doctor --json
 - id: llm-openai-codex
   config:
     enableProxy: false
+    enableAccountFallback: false
     enableSearch: false
     enableImageTool: false
     enableImageGeneration: false
@@ -171,6 +172,7 @@ Codex Connect 默认使用**直连**。代理是可选项，只作用于本插�
 
 ### 只开启你准备使用的能力
 
+- `enableAccountFallback: true` 会显式启用已保存 ChatGPT 账户之间的自动切换；只有命中白名单中的终止额度机器码、且尚未开始任何工具调用时才会触发。插件会用原始请求上下文重试，不插入隐藏续写消息，并在 Host 日志中记录脱敏切换信息。
 - `enableSearch: true` 会把 Codex 注册为可选择的搜索提供方，不会把它选为 profile 的全局搜索路由。
 - `enableImageTool: true` 会为具备视觉能力的模型启用 `view_image`，用于审批后的本地读取和公网图片获取。
 - `enableImageGeneration: true` 会启用只接受文字描述的图片生成工具。使用你当前 GPT 订阅计划提供的图片生成能力。Codex Connect 会把生成结果的精确原文件保存到插件自有存储，同时另存一份 DSH 附件作为对话预览。
@@ -235,6 +237,7 @@ Codex Connect 默认使用**直连**。代理是可选项，只作用于本插�
 | 字段 | 默认值 | 可选值 |
 |---|---:|---|
 | `models` | 完整目录 | Codex model id 数组；空数组隐藏全部条目 |
+| `enableAccountFallback` | `false` | boolean；在已保存账户之间进行仅额度触发的 Fallback |
 | `enableProxy` | `false` | boolean；除非显式启用，否则使用直连 |
 | `proxyUrl` | `http://127.0.0.1:7890`（未启用的占位值） | 不带凭据的 HTTP(S) proxy origin |
 | `contextWindowOverrides` | 无 | 按模型覆盖 contextWindow 的映射；见下文 |
