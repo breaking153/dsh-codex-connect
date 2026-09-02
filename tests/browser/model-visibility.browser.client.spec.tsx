@@ -7,11 +7,18 @@ import { modelCatalogFixture } from '../model-catalog-fixture.ts'
 import { OpenAICodexConfiguration } from '../../src/client/OpenAICodexConfiguration.tsx'
 import { en } from '../../src/client/locales.ts'
 import { OPENAI_CODEX_MODEL_CATALOG_PATH } from '../../src/model-contract.ts'
+import {
+  OPENAI_CODEX_PROXY_DETECT_PATH,
+  OPENAI_CODEX_PROXY_TEST_PATH,
+} from '../../src/proxy-paths.ts'
 import { DEFAULT_OPENAI_CODEX_SETTINGS, resolveOpenAICodexSettings } from '../../src/settings-contract.ts'
 import type { OpenAICodexSettingsConfig } from '../../src/settings-contract.ts'
 
-function t(key: keyof typeof en): string {
-  return en[key]
+function t(key: keyof typeof en, params: Record<string, unknown> = {}): string {
+  return Object.entries(params).reduce(
+    (value, [name, replacement]) => value.replace(`{${name}}`, String(replacement)),
+    en[key],
+  )
 }
 
 function settingsScopeFixture(initial: Partial<OpenAICodexSettingsConfig> = {}, writable = true): {
@@ -68,6 +75,23 @@ afterEach(() => {
 })
 
 describe('Codex model visibility in Chromium', () => {
+  it('keeps staged changes and actions while switching settings modules', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json(modelCatalogFixture([{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }]))))
+    const { scope, set } = settingsScopeFixture()
+    root.render(createElement(OpenAICodexConfiguration, { scope, t }))
+    const model = page.getByRole('checkbox', { name: /GPT-5\.6 Sol/u })
+    await model.click()
+    await expect.element(page.getByRole('button', { name: en.save, exact: true })).toBeEnabled()
+    await page.getByRole('tab', { name: en.networkModule, exact: true }).click()
+    await expect.element(page.getByText(en.networkHeading, { exact: true })).toBeVisible()
+    await expect.element(page.getByRole('button', { name: en.save, exact: true })).toBeEnabled()
+    await page.getByRole('tab', { name: en.modelsModule, exact: true }).click()
+    await expect.element(model).not.toBeChecked()
+    await page.getByRole('button', { name: en.discard, exact: true }).click()
+    await expect.element(model).toBeChecked()
+    expect(set).not.toHaveBeenCalled()
+  })
+
   it('keeps the label and numeric input on one row, the limit on the next and the slider full-width', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json(modelCatalogFixture([{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }]))))
     const { scope } = settingsScopeFixture()
@@ -158,6 +182,7 @@ describe('Codex model visibility in Chromium', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json(modelCatalogFixture([{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }]))))
     const { scope, set } = settingsScopeFixture()
     root.render(createElement(OpenAICodexConfiguration, { scope, t }))
+    await page.getByRole('tab', { name: en.capabilitiesModule, exact: true }).click()
     const checkbox = page.getByRole('checkbox', { name: /Codex Auto-review/u })
     await expect.element(page.getByText(en.autoReviewOfficialBadge, { exact: true })).toBeVisible()
     const details = page.getByText(en.autoReviewDetails, { exact: true }).element().closest('details') as HTMLDetailsElement
@@ -265,5 +290,66 @@ describe('Codex model visibility in Chromium', () => {
     await input.fill('128000')
     await expect.element(page.getByRole('button', { name: en.save, exact: true })).toBeEnabled()
     expect(page.getByRole('slider', { name: en.contextSlider }).element().getAttribute('max')).toBe('128000')
+  })
+
+  it('keeps proxy state explicit and touch targets usable in a narrow viewport', async () => {
+    const candidate = 'http://127.0.0.1:7897'
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const value = String(input)
+      if (value === OPENAI_CODEX_MODEL_CATALOG_PATH) return Response.json(modelCatalogFixture([{ id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' }]))
+      if (value === OPENAI_CODEX_PROXY_DETECT_PATH) {
+        return Response.json({
+          candidates: [{ proxyUrl: candidate, reachable: true, classification: 'reachable', status: 401 }],
+          results: [{ proxyUrl: candidate, reachable: true, classification: 'reachable', status: 401 }],
+        })
+      }
+      expect(value.startsWith(`${OPENAI_CODEX_PROXY_TEST_PATH}?`)).toBe(true)
+      const proxyUrl = new URL(value, window.location.href).searchParams.get('proxyUrl') ?? ''
+      return Response.json({ proxyUrl, reachable: true, classification: 'reachable', status: 401 })
+    }))
+    const { scope, set } = settingsScopeFixture()
+    root.render(createElement(OpenAICodexConfiguration, { scope, t }))
+    await page.getByRole('tab', { name: en.networkModule, exact: true }).click()
+    await page.viewport(360, 800)
+    host.style.width = '100%'
+
+    const automaticPanel = document.querySelector<HTMLElement>('#openai-codex-proxy-auto')
+    const manualPanel = document.querySelector<HTMLElement>('#openai-codex-proxy-manual')
+    if (automaticPanel === null || manualPanel === null) throw new Error('proxy mode panels were not rendered')
+    expect(automaticPanel.hidden).toBe(false)
+    expect(getComputedStyle(automaticPanel).display).not.toBe('none')
+    expect(manualPanel.hidden).toBe(true)
+    expect(getComputedStyle(manualPanel).display).toBe('none')
+    await page.getByRole('button', { name: en.scanLocalProxy, exact: true }).click()
+    await page.getByRole('button', { name: en.useThisProxy, exact: true }).click()
+    await expect.element(page.getByText(en.selectedProxy, { exact: true }).first()).toBeVisible()
+    await expect.element(page.getByText(en.pendingProxy.replace('{proxyUrl}', candidate), { exact: true })).toBeVisible()
+    expect(set).not.toHaveBeenCalled()
+
+    await page.getByRole('tab', { name: en.manualEntry, exact: true }).click()
+    expect(automaticPanel.hidden).toBe(true)
+    expect(getComputedStyle(automaticPanel).display).toBe('none')
+    expect(manualPanel.hidden).toBe(false)
+    expect(getComputedStyle(manualPanel).display).not.toBe('none')
+    const address = page.getByRole('textbox', { name: en.proxyAddress, exact: true })
+    await expect.element(address).toHaveAttribute('aria-invalid', 'false')
+    await address.fill('http://user:secret@127.0.0.1:7898')
+    await expect.element(address).toHaveAttribute('aria-invalid', 'true')
+    await expect.element(page.getByRole('button', { name: en.testProxy, exact: true })).toBeDisabled()
+    await address.fill('http://127.0.0.1:7898')
+    await page.getByRole('button', { name: en.testProxy, exact: true }).click()
+    const useProxy = page.getByRole('button', { name: en.useThisProxy, exact: true })
+    await expect.element(useProxy).toBeEnabled()
+    await useProxy.click()
+    await expect.element(page.getByText(en.selectedProxy, { exact: true }).last()).toBeVisible()
+
+    for (const control of [
+      page.getByRole('tab', { name: en.automaticDetection, exact: true }),
+      page.getByRole('tab', { name: en.manualEntry, exact: true }),
+      page.getByRole('button', { name: en.testProxy, exact: true }),
+      page.getByRole('button', { name: en.save, exact: true }),
+      page.getByRole('button', { name: en.discard, exact: true }),
+    ]) expect(control.element().getBoundingClientRect().height).toBeGreaterThanOrEqual(44)
+    expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth)
   })
 })
