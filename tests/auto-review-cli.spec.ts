@@ -8,12 +8,12 @@ const secret = 'private-access'
 function fixture(): AutoReviewProbeDependencies {
   return {
     diagnose: async () => ({
-      package: 'dsh-codex-connect', version: '0.1.0-alpha.4.22', node: 'v22.19.0',
+      package: 'dsh-codex-connect', version: '0.1.0-alpha.4.23', node: 'v22.19.0',
       credentialFile: { path: '/private/credential.json', state: 'owner-only', mode: '600' },
       capabilities: { modelProvider: true, search: false, imageTool: false, imageGeneration: false, changesHarnessDefaultModel: false, changesHarnessSearchRoute: false },
       providerConflict: false, hints: [],
       compatibility: evaluateCompatibility({ nodeVersion: 'v22.19.0', packageVersions: {
-        '@deepseek-ai/dsh-llm': '0.1.2-alpha.2', '@deepseek-ai/dsh-llm-pi-ai': '0.1.2-alpha.2', '@earendil-works/pi-ai': '0.84.4',
+        '@deepseek-ai/dsh-llm': '0.1.2-alpha.3', '@deepseek-ai/dsh-llm-pi-ai': '0.1.2-alpha.3', '@earendil-works/pi-ai': '0.84.4',
       } }),
     }),
     credentials: { read: async () => ({ type: 'oauth', access: secret, refresh: 'private-refresh', accountId: 'private-account', expires: 10_000 }) },

@@ -18,25 +18,28 @@
 
 ## 五分钟快速开始
 
-本快速指南适用于 DSH `0.1.2-alpha.2` 与 Codex Connect Alpha 4.22。请先运行 `dsh --version`。如果使用 DSH `0.1.1-rc.2` 或 `0.1.0-rc.7`，请在 [INSTALL.md](../INSTALL.md) 中选择匹配的插件版本。本指南使用 `web` profile；请把 `web` 替换成你已经在用的 Harness profile 名称。如果在 DeepSeek Harness 源码 checkout 中运行，请在命令前加 `pnpm`。
+本快速指南适用于 DSH `0.1.2-alpha.2` 与 Codex Connect Alpha 4.23。请先运行 `dsh --version`。如果使用 DSH `0.1.1-rc.2` 或 `0.1.0-rc.7`，请在 [INSTALL.md](../INSTALL.md) 中选择匹配的插件版本。本指南使用 `web` profile；请把 `web` 替换成你已经在用的 Harness profile 名称。如果在 DeepSeek Harness 源码 checkout 中运行，请在命令前加 `pnpm`。
 
 ### 1. 将插件装入一个 profile
 
 ```sh
-dsh plugin --profile web add dsh-codex-connect@0.1.0-alpha.4.22
+dsh plugin --profile web add dsh-codex-connect@0.1.0-alpha.4.23
 ```
 
 预期结果：包被加入该 profile。这个动作不会更改 profile 的默认模型或全局搜索路由。
 
 请使用上面的精确版本，确保已验证的 DSH 与插件组合可以复现。`alpha` 是会移动的 npm 标签，不是兼容性保证。
 
-### Alpha 4.22 更新内容
+### Alpha 4.23 更新内容
 
 - 同时适配 DSH `0.1.2-alpha.2` 的客户端设置、会话控制器接口及其声明的 `@earendil-works/pi-ai` 版本范围 `^0.84.2`。
 - 在 **设置 → 模型** 中提供紧凑的 **Openai-Codex** 卡片，用于管理已保存的 ChatGPT 账户、授权、额度和共享 Codex Connect 设置，同时保留原插件设置入口。
 - 浏览器授权中断后，可以继续、取消或重试，不需要重启 DSH，也不会删除已有凭据；完整授权流程使用可配置且有范围限制的期限。
 - 使用联动的滑条和数字输入框，逐模型调整有范围限制的本地上下文预算。保存覆盖值前继续使用目录默认值；配置上限不代表服务端上下文容量。
 - 使用跟随主题的前景色和填充色，确保深色模式下主按钮文字清晰可读。
+- 在 DSH `0.1.2-alpha.2` 中正常打开和渲染 Web 会话；Composer 模型目录现在会声明其使用的嵌套会话 remote。
+- 通过 `auto-review-probe` 显式发送一条合成空操作，探测隐藏的 `codex-auto-review` 审批 reviewer。该命令不会添加可选模型、审查真实命令、刷新凭据或启用 Auto-review。
+- 快速开始继续固定使用已验证的 DSH `0.1.2-alpha.2` 组合；当 npm 多个渠道解析到同一 DSH 版本时，上游 Canary 不再重复执行。
 
 ### 版本更新提醒
 
@@ -68,7 +71,7 @@ dsh web
 
 ### 3. 找到 Openai-Codex 账户卡
 
-打开 **设置 → 模型**，找到 **Openai-Codex**。这是 Alpha 4.22 的主要账户入口。如果当前 profile 没有模型设置分区，请改用 **设置 → 插件 → 插件配置 → Codex Connect**。
+打开 **设置 → 模型**，找到 **Openai-Codex**。这是 Alpha 4.23 的主要账户入口。如果当前 profile 没有模型设置分区，请改用 **设置 → 插件 → 插件配置 → Codex Connect**。
 
 模型页账户卡标注“由 Codex Connect 插件提供支持。”，用于 ChatGPT 授权、重新授权、退出和查看额度。两个设置页面共用同一份内存账户状态及轮询。**更多设置** 会在弹窗中打开代理、模型显示、搜索、图片和上下文预算配置表单，原插件设置入口仍保留。两处保存到同一份配置；关闭弹窗或按 Escape 会放弃弹窗内未保存的修改。模型页底部入口是可选增强：没有该设置分区的 profile 仍保留原插件入口。
 
@@ -158,6 +161,7 @@ dsh plugin --profile web exec dsh-codex-connect doctor --json
     enableSearch: false
     enableImageTool: false
     enableImageGeneration: false
+    enableAutoReview: false
 ```
 
 打开 **设置 → 插件 → 插件配置 → Codex Connect**，即可在同一张卡片中管理账户和这些选项。**保存更改**只影响本插件的能力配置并即时生效，绝不会选择默认模型或全局搜索路由。
@@ -311,9 +315,11 @@ dsh plugin --profile web exec dsh-codex-connect capabilities --model gpt-5.6-sol
 
 本报告仅涵盖独立路由，不验证活动 profile 路由、搜索/图片工具、浏览器兼容性、provider 重试行为或会话恢复。本插件没有实现自动 provider 故障切换，因此该项为 `rejected`，需要用户明确选择其他 provider。有限 SSE 默认路径不会触发 WebSocket 到 SSE 的回退。`contextManagement` 和续接仍为 `unknown`；原生 compaction 和 WebSocket reuse 在当前集成策略下为 `rejected`。诊断结果不会启用这些能力，也不会更改 Harness 历史。退出码只覆盖运行时、OAuth、所选模型、Responses 和 SSE：`0` 表示五项均可用，`1` 表示至少一项被拒绝，`2` 表示证据未知、选项无效或检查失败。被拒绝的可选能力不影响该退出码。
 
-### 隐藏审批审查能力探针
+### Codex 自动审查与能力探针
 
-Issue #84 使用一条独立、按需执行的探针开展调研。它不会把 `codex-auto-review` 加入模型选择器，也不会审查或执行真实的 Harness 命令。
+Codex 自动审查是 Codex Connect 接入的 Codex 官方能力，在 **设置 → 插件 → Codex Connect** 中默认关闭。界面常驻简短说明，完整告知可展开，每个 profile 首次启用时需要确认。启用后，它会在 DSH 策略检查之后审查符合条件的 Harness 审批请求。启用即允许插件把有界的最近审批上下文、工具参数、工作目录和待执行动作发送到 `chatgpt.com`；隐藏推理和已保存凭据会被排除。只有完整的结构化允许结果才能授权一次执行。拒绝会注入理由和禁止绕行指引；连续拒绝会打开当前轮熔断器；存在可选命令服务时，`/approve <拒绝记录 ID>` 可以授权一次完全相同的重试。详见[自动审查](auto-review.zh.md)和 [Auto-review](auto-review.md)。
+
+独立探针继续用于诊断隐藏路由。它不会把 `codex-auto-review` 加入模型选择器，也不会审查或执行真实的 Harness 命令。
 
 ```sh
 dsh plugin --profile web exec dsh-codex-connect auto-review-probe --json
@@ -321,11 +327,11 @@ dsh plugin --profile web exec dsh-codex-connect auto-review-probe --json
 
 该命令通过 ChatGPT OAuth Responses 路由向隐藏 reviewer 发送一条固定的合成空操作。它要求已存凭据尚未过期，不刷新或写入凭据，不跟随重定向、不重试，响应上限为 64 KiB，并在返回前销毁自有连接。`--proxy <http(s)-origin>` 和 `--timeout-ms <1..60000>` 与普通能力探针具有相同的显式网络含义。
 
-`supported` 只表示路由接受了精确的隐藏模型 ID，并返回一条符合 reviewer JSON 字段的完整审查结果。`rejected` 表示请求或本地前置条件被明确拒绝。超时、取消、格式错误、不完整流、限流和网络故障均保持 `unknown`。输出会省略凭据、账号 ID、response ID、服务端消息、模型文本、路径、headers 和代理 origin。只有运行时、OAuth 和 reviewer 三项均为可用时才返回 `0`；至少一项被拒绝时返回 `1`；证据未知或输入无效时返回 `2`。该报告只提供证据：它绝不会启用自动审批、修改 DSH 策略或授权任何操作。
+`supported` 只表示路由接受了精确的隐藏模型 ID，并返回一条符合 reviewer JSON 字段的完整审查结果。`rejected` 表示请求或本地前置条件被明确拒绝。超时、取消、格式错误、不完整流、限流和网络故障均保持 `unknown`。输出会省略凭据、账号 ID、response ID、服务端消息、模型文本、路径、headers 和代理 origin。只有运行时、OAuth 和 reviewer 三项均为可用时才返回 `0`；至少一项被拒绝时返回 `1`；证据未知或输入无效时返回 `2`。该报告只提供证据：它绝不会修改自动审查设置、DSH 策略或授权状态。
 
 ## 兼容性与安全边界
 
-- Alpha 4.22 已与 DSH 插件 API packages `0.1.2-alpha.2`、`@earendil-works/pi-ai` `^0.84.2`（验证时解析为 `0.84.4`）和 Node.js `^22.19.0 || >=24.0.0` 完成验证。已发布 Alpha 4.21 仍与 DSH `0.1.1-rc.2` 和 pi-ai `0.82.1` 保持已验证状态。[verified-compatibility.json](../verified-compatibility.json) 记录精确组合；安装命令见 [INSTALL.md](../INSTALL.md)。
+- Alpha 4.23 已与 DSH 插件 API packages `0.1.2-alpha.2`、`@earendil-works/pi-ai` `^0.84.2`（验证时解析为 `0.84.4`）和 Node.js `^22.19.0 || >=24.0.0` 完成验证。已发布 Alpha 4.22 仍是同一 DSH 版本较早的已验证选择；Alpha 4.21 仍与 DSH `0.1.1-rc.2` 和 pi-ai `0.82.1` 保持已验证状态。[verified-compatibility.json](../verified-compatibility.json) 记录精确组合；安装命令见 [INSTALL.md](../INSTALL.md)。
 - 新版 DSH 将原来的 client runtime 拆分为 Session Controller、Settings、Store 和 Renderer 包。Codex Connect 通过这些公开接口接入设置和图片操作。规范化预览的编码与尺寸由 DSH 决定；Codex Connect 另行保留字节完全一致的原图。
 - 升级时请将 DSH 插件 API packages 与 `@earendil-works/pi-ai` 作为一组升级，再运行 `dsh-codex-connect doctor --json` 和兼容性检查。本契约不对未来版本作判断。
 - 每日上游检查发现新的 DSH `latest` 或 `next` 候选版本时，会把 Codex Connect 安装到隔离 Profile 中，在没有 OAuth 凭据的情况下启动已安装的模型运行时，验证模型与推理强度发现，并确认提供方可被正确卸载。真实登录、额度和模型请求仍需在测试 Profile 中人工验证。

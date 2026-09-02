@@ -13,6 +13,8 @@ describe('OpenAI Codex proxy settings contract', () => {
   it('keeps fresh and legacy settings on direct connection', () => {
     expect(DEFAULT_OPENAI_CODEX_SETTINGS.enableProxy).toBe(false)
     expect(DEFAULT_OPENAI_CODEX_SETTINGS.enableAccountFallback).toBe(false)
+    expect(DEFAULT_OPENAI_CODEX_SETTINGS.autoReviewDisclosureAcknowledged).toBe(false)
+    expect(DEFAULT_OPENAI_CODEX_SETTINGS.enableAutoReview).toBe(false)
     expect(DEFAULT_OPENAI_CODEX_SETTINGS.proxyUrl).toBe(DEFAULT_OPENAI_CODEX_PROXY_URL)
     const legacy = decodeOpenAICodexSettings({
       enableSearch: false,
@@ -25,7 +27,38 @@ describe('OpenAI Codex proxy settings contract', () => {
     expect(legacy?.enableProxy).toBe(false)
     expect(legacy?.enableAccountFallback).toBe(false)
     expect(legacy?.proxyUrl).toBe(DEFAULT_OPENAI_CODEX_PROXY_URL)
+    expect(legacy?.autoReviewDisclosureAcknowledged).toBe(false)
+    expect(legacy?.enableAutoReview).toBe(false)
     expect(resolveOpenAICodexProxyUrl(legacy ?? {})).toBeUndefined()
+  })
+
+  it('rejects non-boolean Auto-review settings while preserving the default-off legacy value', () => {
+    expect(decodeOpenAICodexSettings({
+      ...DEFAULT_OPENAI_CODEX_SETTINGS,
+      enableAutoReview: 'yes',
+    })).toBeUndefined()
+    expect(resolveOpenAICodexSettings({}).enableAutoReview).toBe(false)
+    expect(decodeOpenAICodexSettings({
+      ...DEFAULT_OPENAI_CODEX_SETTINGS,
+      autoReviewDisclosureAcknowledged: 'yes',
+    })).toBeUndefined()
+    expect(Config({
+      autoReviewDisclosureAcknowledged: true,
+      enableAutoReview: true,
+    })).toMatchObject({
+      autoReviewDisclosureAcknowledged: true,
+      enableAutoReview: true,
+    })
+  })
+
+  it('keeps Auto-review inactive until its disclosure is acknowledged', () => {
+    expect(resolveOpenAICodexSettings({
+      enableAutoReview: true,
+    }).enableAutoReview).toBe(false)
+    expect(resolveOpenAICodexSettings({
+      autoReviewDisclosureAcknowledged: true,
+      enableAutoReview: true,
+    }).enableAutoReview).toBe(true)
   })
 
   it('rejects unsafe active proxy values while preserving explicit activation semantics', () => {

@@ -18,25 +18,28 @@ The setup and image-result screenshots in this English guide are captured from t
 
 ## Quick start (about five minutes)
 
-This quick start targets DSH `0.1.2-alpha.2` with Codex Connect Alpha 4.22. Check `dsh --version` first. For DSH `0.1.1-rc.2` or `0.1.0-rc.7`, select the matching plugin version in [INSTALL.md](INSTALL.md). This guide uses the `web` profile; replace `web` with the name of the Harness profile you already use. From a DeepSeek Harness source checkout, prefix the commands with `pnpm`.
+This quick start targets DSH `0.1.2-alpha.2` with Codex Connect Alpha 4.23. Check `dsh --version` first. For DSH `0.1.1-rc.2` or `0.1.0-rc.7`, select the matching plugin version in [INSTALL.md](INSTALL.md). This guide uses the `web` profile; replace `web` with the name of the Harness profile you already use. From a DeepSeek Harness source checkout, prefix the commands with `pnpm`.
 
 ### 1. Install the plugin into one profile
 
 ```sh
-dsh plugin --profile web add dsh-codex-connect@0.1.0-alpha.4.22
+dsh plugin --profile web add dsh-codex-connect@0.1.0-alpha.4.23
 ```
 
 Expected result: the package is added to that profile. This does not change the profile's default model or global search route.
 
 Use the exact version above to keep the verified DSH and plugin pair reproducible. `alpha` is a moving npm tag, not a compatibility guarantee.
 
-### What's new in Alpha 4.22
+### What's new in Alpha 4.23
 
 - Target the DSH `0.1.2-alpha.2` client settings and session-controller APIs together with its declared `@earendil-works/pi-ai` range `^0.84.2`.
 - Manage saved ChatGPT accounts, authorization, quota and shared Codex Connect settings from a compact **Openai-Codex** card in **Settings → Models**, while retaining the original Plugin settings entry.
 - Continue, cancel or retry an interrupted browser authorization without restarting DSH or deleting an existing credential. The full authorization flow has a configurable bounded deadline.
 - Adjust a bounded local context budget per visible Codex model with a linked slider and numeric input. Catalog defaults remain in effect until an override is saved; the configuration limit is not a claim about the service-side context capacity.
 - Keep primary button labels readable in dark mode with theme-aware foreground and fill colors.
+- Open and render Web sessions normally on DSH `0.1.2-alpha.2`; the Composer model directory now declares the nested session remote it uses.
+- Probe the hidden `codex-auto-review` approval reviewer with one explicit, synthetic no-op through `auto-review-probe`. The command does not add a selectable model, review a real command, refresh credentials, or enable Auto-review.
+- Keep the quick-start command pinned to the verified DSH `0.1.2-alpha.2` pair and avoid duplicate upstream Canary runs when npm channels resolve to the same DSH version.
 
 ### Version updates
 
@@ -66,7 +69,7 @@ Expected result: the Harness web UI opens for the selected profile.
 
 ### 3. Find the Openai-Codex account card
 
-Open **Settings → Models** and find **Openai-Codex**. This is the primary Alpha 4.22 account entry. If the profile does not expose the Models settings section, open **Settings → Plugins → Plugin configuration → Codex Connect** instead.
+Open **Settings → Models** and find **Openai-Codex**. This is the primary Alpha 4.23 account entry. If the profile does not expose the Models settings section, open **Settings → Plugins → Plugin configuration → Codex Connect** instead.
 
 The Models card carries the attribution “Powered by the Codex Connect plugin.” and provides ChatGPT authorization, reauthorization, sign-out and quota. Both settings pages share one in-memory account state and polling owner. **More settings** opens the proxy, model visibility, search, image and context-budget configuration form in a dialog; the original Plugin settings entry remains available. Both entries save to the same settings scope. Close or Escape discards unsaved dialog edits. The Models footer is optional: profiles without that settings section retain the existing Plugin entry.
 
@@ -156,6 +159,7 @@ The installed bundle is intentionally inert beyond model-provider registration:
     enableSearch: false
     enableImageTool: false
     enableImageGeneration: false
+    enableAutoReview: false
 ```
 
 Open **Settings → Plugins → Plugin configuration → Codex Connect** to manage the account and these options in one card. **Save changes** affects only this plugin's capability section and applies live. It never selects a default model or a global search route.
@@ -309,9 +313,11 @@ The report labels each check `supported`, `rejected`, or `unknown`, with a reaso
 
 This report covers only the standalone route, not active profile routing, search/image tools, browser compatibility, provider retry behavior, or session recovery. Automatic provider failover is `rejected` because this plugin does not implement it; select an alternative provider explicitly. WebSocket-to-SSE fallback is inactive with the finite SSE default. `contextManagement` and continuation remain `unknown`; native compaction and WebSocket reuse are `rejected` by the current integration policy. No diagnostic result enables these capabilities or changes Harness history. Exit codes cover runtime, OAuth, selected model, Responses, and SSE only: `0` means all five were supported, `1` means at least one was rejected, and `2` means unknown evidence, invalid options, or an inspection failure. Rejected optional capabilities do not change that exit code.
 
-### Hidden approval-review capability probe
+### Codex Auto-review and capability probe
 
-Issue #84 is being investigated with a separate, opt-in probe. It does not add `codex-auto-review` to the model selector and does not review or execute a real Harness command.
+Codex Auto-review is an official Codex capability integrated by Codex Connect and disabled by default under **Settings → Plugins → Codex Connect**. Its short explanation stays visible; the full disclosure is expandable, and the first enablement in each profile requires confirmation. When enabled, it reviews eligible Harness approval requests after DSH policy runs. Enabling it permits the plugin to send bounded recent approval context, tool arguments, working directory, and the planned action to `chatgpt.com`; hidden reasoning and stored credentials are excluded. Only a complete structured allow result can grant one execution. Denials inject a rationale and no-circumvention instruction, repeated denials open a turn-local circuit breaker, and `/approve <denial-id>` can authorize one exact retry when the optional command service is present. See [Auto-review](docs/auto-review.md) and [自动审查](docs/auto-review.zh.md).
+
+The separate probe remains available for diagnosing the hidden route. It does not add `codex-auto-review` to the model selector and does not review or execute a real Harness command.
 
 ```sh
 dsh plugin --profile web exec dsh-codex-connect auto-review-probe --json
@@ -319,11 +325,11 @@ dsh plugin --profile web exec dsh-codex-connect auto-review-probe --json
 
 The command sends one fixed, synthetic no-op to the hidden reviewer through the ChatGPT OAuth Responses route. It requires an unexpired stored credential, never refreshes or writes credentials, does not follow redirects or retry, caps the response at 64 KiB, and destroys its owned connection before returning. `--proxy <http(s)-origin>` and `--timeout-ms <1..60000>` have the same explicit-network meaning as the ordinary capability probe.
 
-`supported` means only that the route accepted the exact hidden model id and returned one complete assessment matching the reviewer JSON fields. `rejected` means the request or local prerequisite was explicitly rejected. Timeouts, cancellation, malformed output, incomplete streams, rate limits, and network failures remain `unknown`. Output omits credentials, account ids, response ids, provider messages, model text, paths, headers, and proxy origins. Exit `0` requires runtime, OAuth, and reviewer checks to be supported; exit `1` means at least one was rejected; exit `2` means evidence is unknown or input is invalid. The report is evidence only: it never enables automatic approval, changes DSH policy, or authorizes an action.
+`supported` means only that the route accepted the exact hidden model id and returned one complete assessment matching the reviewer JSON fields. `rejected` means the request or local prerequisite was explicitly rejected. Timeouts, cancellation, malformed output, incomplete streams, rate limits, and network failures remain `unknown`. Output omits credentials, account ids, response ids, provider messages, model text, paths, headers, and proxy origins. Exit `0` requires runtime, OAuth, and reviewer checks to be supported; exit `1` means at least one was rejected; exit `2` means evidence is unknown or input is invalid. The report is evidence only: it never changes the Auto-review setting, DSH policy, or authorization state.
 
 ## Compatibility and security boundary
 
-- Alpha 4.22 is verified with DSH plugin API packages `0.1.2-alpha.2`, `@earendil-works/pi-ai` `^0.84.2` (resolved as `0.84.4` during verification), and Node.js `^22.19.0 || >=24.0.0`. Published Alpha 4.21 remains verified with DSH `0.1.1-rc.2` and pi-ai `0.82.1`. [verified-compatibility.json](verified-compatibility.json) records the exact pairs; see [INSTALL.md](INSTALL.md) for installation commands.
+- Alpha 4.23 is verified with DSH plugin API packages `0.1.2-alpha.2`, `@earendil-works/pi-ai` `^0.84.2` (resolved as `0.84.4` during verification), and Node.js `^22.19.0 || >=24.0.0`. Published Alpha 4.22 remains an earlier verified choice for the same DSH version; Alpha 4.21 remains verified with DSH `0.1.1-rc.2` and pi-ai `0.82.1`. [verified-compatibility.json](verified-compatibility.json) records the exact pairs; see [INSTALL.md](INSTALL.md) for installation commands.
 - The new DSH client splits its former runtime into Session Controller, Settings, Store, and Renderer packages. Codex Connect uses those public interfaces for settings and image actions. DSH owns normalized preview encoding and dimensions; Codex Connect retains the exact original image separately.
 - Upgrade the DSH plugin API packages and `@earendil-works/pi-ai` as one group, then run `dsh-codex-connect doctor --json` and the compatibility check again. This contract does not make claims about future versions.
 - When the daily upstream check finds a new `latest` or `next` DSH candidate, it installs Codex Connect into an isolated profile, boots the installed model runtime without OAuth credentials, verifies model and reasoning-effort discovery, and confirms provider disposal. Live sign-in, quota, and model requests still require manual validation in the test profile.

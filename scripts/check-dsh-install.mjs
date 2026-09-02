@@ -9,7 +9,7 @@ import { scrubCanaryEnvironment } from './canary-environment.mjs'
 import { runBoundedCommand } from './bounded-command.mjs'
 
 const JSON_SCHEMA_VERSION = 1
-const DEFAULT_DSH_VERSION = '0.1.2-alpha.2'
+const DEFAULT_DSH_VERSION = '0.1.2-alpha.3'
 const UNDECLARED_CANARY_MODE = '1'
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const RUNTIME_CHECK = resolve(REPO_ROOT, 'scripts/check-installed-runtime.mjs')
@@ -224,7 +224,8 @@ async function main() {
     if (!/^    enableProxy: false$/mu.test(pluginBlock)
       || !/^    enableSearch: false$/mu.test(pluginBlock)
       || !/^    enableImageTool: false$/mu.test(pluginBlock)
-      || !/^    enableImageGeneration: false$/mu.test(pluginBlock)) {
+      || !/^    enableImageGeneration: false$/mu.test(pluginBlock)
+      || !/^    enableAutoReview: false$/mu.test(pluginBlock)) {
       throw new CompatibilityCheckError('local plugin configuration did not retain all optional capabilities as false')
     }
 
@@ -262,6 +263,7 @@ async function main() {
         enableSearch: false,
         enableImageTool: false,
         enableImageGeneration: false,
+        enableAutoReview: false,
       },
       runtime: runtimeReport,
     })}\n`)
