@@ -393,6 +393,10 @@ interface OpenAICodexSettingsConfig {
   enableSearch: boolean;
   enableImageTool: boolean;
   enableImageGeneration: boolean;
+  /** Whether this profile accepted the Auto-review data disclosure. */
+  autoReviewDisclosureAcknowledged: boolean;
+  /** Let the hidden Codex reviewer answer eligible DSH approval requests. */
+  enableAutoReview: boolean;
   searchModel: string;
   searchMode: OpenAICodexSearchMode;
   searchContextSize: OpenAICodexSearchContextSize;
@@ -702,6 +706,10 @@ interface Config {
   enableImageTool?: boolean;
   /** Register the optional prompt-only image generation tool. */
   enableImageGeneration?: boolean;
+  /** Record that this profile accepted the Auto-review data disclosure. */
+  autoReviewDisclosureAcknowledged?: boolean;
+  /** Let the hidden Codex reviewer answer eligible DSH approval requests. */
+  enableAutoReview?: boolean;
   /** Model used for auxiliary standalone searches. */
   searchModel?: string;
   /** Cached, indexed, or live web access. */
