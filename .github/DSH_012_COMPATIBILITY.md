@@ -22,10 +22,10 @@ For the Alpha 4.24 / alpha.5 release baseline, the registry-only lockfile and cl
 
 ## Release evidence
 
-1. Node 22.19 and 24, browser, Windows, dependency review, and CodeQL passed for the exact PR head.
-2. On 2026-08-31, the maintainer completed and accepted isolated full Web, OAuth and model requests, image actions and downloads, and network-authentication validation.
-3. Alpha 4.24 is the selected plugin release version for DSH `0.1.2-alpha.5`. Merge, GitHub/npm publication, and npm dist-tag changes remain separately controlled release operations.
+1. The Alpha 4.24 / alpha.5 baseline has registry-only installation, automated runtime, browser, Windows, dependency-review, and CodeQL evidence.
+2. The 2026-08-31 isolated full Web, OAuth, model, image, download, and network-authentication acceptance applies to Alpha 4.22 / DSH `0.1.2-alpha.2`; it is not fresh authenticated-profile evidence for alpha.5.
+3. Alpha 4.24 is the selected plugin release version for DSH `0.1.2-alpha.5`, and the repository compatibility record currently classifies that pair from the keyless evidence above. Fresh authenticated alpha.5 profile acceptance remains required before treating the record as live-service validation. Merge, GitHub/npm publication, and npm dist-tag changes remain separately controlled release operations.
 
 ## Review concern
 
-Registry installation and keyless runtime checks do not replace real browser acceptance. No dependency test is skipped or made to report success for an unavailable package.
+Registry installation and keyless runtime checks do not replace real authenticated browser acceptance. Until fresh alpha.5 profile acceptance is recorded, the Alpha 4.24 pairing is keyless-verified only. No dependency test is skipped or made to report success for an unavailable package.
