@@ -72,7 +72,7 @@ These choices reflect the repository's existing verification record, not a new i
 
    Alpha 4.24 offers the same account actions in **Settings → Models → Openai-Codex**, plus a shared **More settings** dialog for model visibility, proxy, search, image, context-budget, and Auto-review controls. The original Plugin settings entry remains available; neither entry automatically starts login or changes model/search defaults.
 
-   When signed out, select **Authorize**. When signed in, use **Add account**, explicitly choose from **Saved accounts**, **Sign out**, or **View quota**; use **More settings** for plugin options. Account selection is never quota-driven. If authorization is abandoned, use **Reopen authorization** or **Cancel sign-in** and retry; cancellation does not delete an existing account. Pending authorization expires after 10 minutes by default (`oauthTimeoutMs` in plugin configuration, applied on load).
+   When signed out, select **Authorize**. When signed in, use **Add account**, explicitly choose from **Saved accounts**, **Sign out**, or **View quota**; use **More settings** for plugin options. Account selection is manual by default. The only quota-driven exception is the separately enabled automatic fallback, which acts on confirmed terminal quota exhaustion before any tool call. If authorization is abandoned, use **Reopen authorization** or **Cancel sign-in** and retry; cancellation does not delete an existing account. Pending authorization expires after 10 minutes by default (`oauthTimeoutMs` in plugin configuration, applied on load).
 
 ### Remote browser access
 
