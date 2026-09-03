@@ -10,7 +10,7 @@
   <img src="https://raw.githubusercontent.com/franksong2702/dsh-codex-connect/main/docs/assets/zh/hero.jpg" alt="Codex Connect — 通过 ChatGPT OAuth 连接 DeepSeek Harness" width="100%">
 </p>
 
-`dsh-codex-connect` 提供 `openai-codex` 模型目录和独立的 ChatGPT OAuth 登录。模型仍走 Harness 标准 LLM 服务，因此流式输出、工具调用、reasoning replay、压缩、文件系统控制、权限门禁和审批提示仍由 Harness 负责。ChatGPT 订阅不会因此变成 OpenAI Platform API 凭据。选择符合条件的 GPT Codex 模型后，Composer 还会显示按对话绑定的 Fast Mode 开关和紧凑的套餐感知额度条。
+`dsh-codex-connect` 提供 `openai-codex` 模型目录和独立的 ChatGPT OAuth 登录。模型仍走 Harness 标准 LLM 服务，因此流式输出、工具调用、reasoning replay、压缩、文件系统控制、权限门禁和审批提示仍由 Harness 负责。ChatGPT 订阅不会因此变成 OpenAI Platform API 凭据。选择符合条件的 GPT Codex 模型后，Composer 还会显示按对话绑定的 Fast Mode 开关和服务端返回的紧凑额度条。
 
 安装是增量的：bundle 不会替换当前主模型或搜索路由；独立搜索、`view_image` 和图片生成也默认关闭，必须显式开启。
 
@@ -18,28 +18,26 @@
 
 ## 五分钟快速开始
 
-本快速指南适用于 DSH `0.1.2-alpha.2` 与 Codex Connect Alpha 4.23。请先运行 `dsh --version`。如果使用 DSH `0.1.1-rc.2` 或 `0.1.0-rc.7`，请在 [INSTALL.md](../INSTALL.md) 中选择匹配的插件版本。本指南使用 `web` profile；请把 `web` 替换成你已经在用的 Harness profile 名称。如果在 DeepSeek Harness 源码 checkout 中运行，请在命令前加 `pnpm`。
+本快速指南适用于 DSH `0.1.2-alpha.5` 与 Codex Connect Alpha 4.24。请先运行 `dsh --version`。如果使用 DSH `0.1.2-alpha.2`、`0.1.1-rc.2` 或 `0.1.0-rc.7`，请在 [INSTALL.md](../INSTALL.md) 中选择匹配的插件版本。本指南使用 `web` profile；请把 `web` 替换成你已经在用的 Harness profile 名称。如果在 DeepSeek Harness 源码 checkout 中运行，请在命令前加 `pnpm`。
 
 ### 1. 将插件装入一个 profile
 
 ```sh
-dsh plugin --profile web add dsh-codex-connect@0.1.0-alpha.4.23
+dsh plugin --profile web add dsh-codex-connect@0.1.0-alpha.4.24
 ```
 
 预期结果：包被加入该 profile。这个动作不会更改 profile 的默认模型或全局搜索路由。
 
 请使用上面的精确版本，确保已验证的 DSH 与插件组合可以复现。`alpha` 是会移动的 npm 标签，不是兼容性保证。
 
-### Alpha 4.23 更新内容
+### Alpha 4.24 更新内容
 
-- 同时适配 DSH `0.1.2-alpha.2` 的客户端设置、会话控制器接口及其声明的 `@earendil-works/pi-ai` 版本范围 `^0.84.2`。
-- 在 **设置 → 模型** 中提供紧凑的 **Openai-Codex** 卡片，用于管理已保存的 ChatGPT 账户、授权、额度和共享 Codex Connect 设置，同时保留原插件设置入口。
-- 浏览器授权中断后，可以继续、取消或重试，不需要重启 DSH，也不会删除已有凭据；完整授权流程使用可配置且有范围限制的期限。
-- 使用联动的滑条和数字输入框，逐模型调整有范围限制的本地上下文预算。保存覆盖值前继续使用目录默认值；配置上限不代表服务端上下文容量。
-- 使用跟随主题的前景色和填充色，确保深色模式下主按钮文字清晰可读。
-- 在 DSH `0.1.2-alpha.2` 中正常打开和渲染 Web 会话；Composer 模型目录现在会声明其使用的嵌套会话 remote。
-- 通过 `auto-review-probe` 显式发送一条合成空操作，探测隐藏的 `codex-auto-review` 审批 reviewer。该命令不会添加可选模型、审查真实命令、刷新凭据或启用 Auto-review。
-- 快速开始继续固定使用已验证的 DSH `0.1.2-alpha.2` 组合；当 npm 多个渠道解析到同一 DSH 版本时，上游 Canary 不再重复执行。
+- 在精确的 DSH `0.1.2-alpha.5` 包组上运行，并完成纯 registry 安装和隔离运行时检查。
+- 在现有模型页/provider 账户卡片中管理多个已保存的 ChatGPT 账户，支持显式切换，并向后兼容迁移旧版凭据。
+- 可选地在确认的终止额度错误后改用下一个已保存账户重试；仅在任何工具调用开始前触发，账户切换可见且可审计。
+- 可选地让 Codex 自动审查在 DSH 策略检查之后处理符合条件的 Harness 审批请求。它默认关闭，首次启用需确认完整告知，失败会回到人工审批，拒绝后支持对完全相同的重试做一次人工覆盖。
+- 通过更清晰的分步流程配置仅作用于 Codex 的可选代理：检测或输入地址、测试当前草稿、明确启用，再保存。修改已启用地址后必须重新测试；失败绝不会静默改走直连。
+- 通过“账户与额度”“模型”“网络”和“能力”四个模块导航更长的插件配置，同时保留一份共享的保存/放弃草稿。
 
 ### 版本更新提醒
 
@@ -71,11 +69,11 @@ dsh web
 
 ### 3. 找到 Openai-Codex 账户卡
 
-打开 **设置 → 模型**，找到 **Openai-Codex**。这是 Alpha 4.23 的主要账户入口。如果当前 profile 没有模型设置分区，请改用 **设置 → 插件 → 插件配置 → Codex Connect**。
+打开 **设置 → 模型**，找到 **Openai-Codex**。这是 Alpha 4.24 的主要账户入口。如果当前 profile 没有模型设置分区，请改用 **设置 → 插件 → 插件配置 → Codex Connect**。
 
 模型页账户卡标注“由 Codex Connect 插件提供支持。”，用于 ChatGPT 授权、重新授权、退出和查看额度。两个设置页面共用同一份内存账户状态及轮询。**更多设置** 会在弹窗中打开代理、模型显示、搜索、图片和上下文预算配置表单，原插件设置入口仍保留。两处保存到同一份配置；关闭弹窗或按 Escape 会放弃弹窗内未保存的修改。模型页底部入口是可选增强：没有该设置分区的 profile 仍保留原插件入口。
 
-模型页紧凑卡片在未登录时显示 **授权**，已登录时显示 **添加账户**、**退出登录** 和 **查看额度**。添加另一个 OAuth 账户后，使用 **已保存账户** 显式选择新 Codex 请求所使用的账户；Codex Connect 不会因为额度情况自动切换账户。**退出登录**只移除当前选择的账户；若还有其他已保存账户，其中一个会成为活动账户，卡片保持登录状态。展开额度后只显示服务端返回的额度条目，不再重复账户操作。浏览器授权中断后，可以点击模型页的 **继续授权**（插件页为 **重新打开授权**）继续原登录，或点击 **取消登录** 后，从任一设置页或另一个受信任浏览器重试。取消不会退出已有的已保存账户。未完成的授权默认在 10 分钟后到期；插件配置 `oauthTimeoutMs` 可设为 1,000–1,800,000 毫秒，在插件加载时生效。获取初始授权链接仍有独立的 30 秒等待上限。取消和到期都不需要重启 DSH。
+模型页紧凑卡片在未登录时显示 **授权**，已登录时显示 **添加账户**、**退出登录** 和 **查看额度**。添加另一个 OAuth 账户后，可在 **已保存账户** 中显式选择新 Codex 请求使用的账户。**退出登录**只移除当前选择的账户；如果仍有其他已保存账户，系统会将其中一个设为活动账户并保持登录状态。展开后只显示服务端返回的额度条目，不再重复账户操作。浏览器授权中断后，可以点击模型页的 **继续授权**（插件页为 **重新打开授权**）继续原登录，或点击 **取消登录** 后，从任一设置页或另一个受信任浏览器重试。取消不会退出已有的已保存账户。未完成的授权默认在 10 分钟后到期；插件配置 `oauthTimeoutMs` 可设为 1,000–1,800,000 毫秒，在插件加载时生效。获取初始授权链接仍有独立的 30 秒等待上限。取消和到期都不需要重启 DSH。
 
 预期结果：新安装时模型页显示 **授权**。插件配置备用入口显示 **尚未登录** 和 **使用 ChatGPT 登录**。
 
@@ -142,11 +140,11 @@ dsh plugin --profile web exec dsh-codex-connect doctor --json
 只有当前对话选择了 `openai-codex` 提供方的 GPT 模型时，Composer 才会显示下面两个小控件。它们都是当前对话级别的控制，不是 profile 全局设置：
 
 - **Fast Mode（闪电图标）**：每个对话默认关闭。点击后请求更快的 `1.5 倍` 模式，再点一次恢复标准速度。它只绑定当前对话，不会改变模型选择，也不会影响其他对话。鼠标悬停或键盘聚焦闪电图标，可以看到当前状态和额度消耗提示。
-- **额度进度条**：位于模型选择器旁边，以 `5h` 和 `7d` 短行显示。剩余额度越低，颜色会从绿色经过黄色/橙色变为红色。鼠标悬停或键盘聚焦时，会显示每个窗口的精确剩余百分比和服务端提供的重置时间。只有检测到 Go 或 Plus 套餐时才保留 `5h` 行；其他套餐以及未知套餐会忽略响应中旧式的 5 小时形状窗口。非 GPT 模型或没有适用额度数据时不会显示。
-- 对于精确模型 `gpt-5.3-codex-spark`，Composer 读取独立的 Spark 额度桶；其他 GPT Codex 模型读取标准 Codex 额度桶，各自返回的窗口属于不同额度。
+- **额度进度条**：位于模型选择器旁边，以紧凑的 `5h` 和 `7d` 行显示。只有服务端为当前模型额度桶返回对应窗口时，该行才会出现。剩余额度越低，颜色会从绿色经过黄色/橙色变为红色。鼠标悬停或键盘聚焦时，会显示每个窗口的精确剩余百分比和服务端提供的重置时间。非 GPT 模型或没有可识别额度窗口时不会显示。
+- 对于精确模型 `gpt-5.3-codex-spark`，Composer 读取独立的 Spark 额度桶；其他 GPT Codex 模型读取标准 Codex 额度桶。插件不会根据 ChatGPT 套餐名称猜测额度窗口。
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/franksong2702/dsh-codex-connect/main/docs/assets/composer-capabilities.jpg" alt="DeepSeek Harness Composer 中按对话绑定的 Fast Mode 闪电控件和紧凑额度条" width="820">
+  <img src="https://raw.githubusercontent.com/franksong2702/dsh-codex-connect/main/docs/assets/composer-capabilities.jpg" alt="DeepSeek Harness Composer 中按对话绑定的 Fast Mode 闪电控件和额度进度条" width="820">
 </p>
 
 ## 可选能力（默认关闭）
@@ -164,7 +162,7 @@ dsh plugin --profile web exec dsh-codex-connect doctor --json
     enableAutoReview: false
 ```
 
-打开 **设置 → 插件 → 插件配置 → Codex Connect**，即可在同一张卡片中管理账户和这些选项。**保存更改**只影响本插件的能力配置并即时生效，绝不会选择默认模型或全局搜索路由。
+打开 **设置 → 插件 → 插件配置 → Codex Connect**，即可通过**账户与额度**、**模型**、**网络**和**能力**四个模块管理同一组设置。切换模块不会丢失暂存修改，常驻的保存/放弃操作会统一处理这些修改。**保存更改**只影响本插件，绝不会选择默认模型或全局搜索路由。模型页的**更多设置**弹窗采用相同组织方式，但不重复账户模块。
 
 ### 网络连接与代理检测
 
@@ -208,10 +206,10 @@ Codex Connect 默认使用**直连**。代理是可选项，只作用于本插�
 
 登录后，Codex Connect 设置卡片可能显示多个服务端额度窗口。它们是不同的额度桶，不是同一个数字重复显示：
 
-- 检测到 Go 或 Plus 套餐且服务端返回对应窗口时显示 **Codex · 5 小时额度**；**Codex · 每周额度** 是普通 GPT Codex 模型使用的标准周额度。
-- 精确 Spark 模型使用独立的 **GPT-5.3-Codex-Spark** 额度桶，其适用的 5 小时与每周窗口遵循相同的套餐选择规则。
+- 标准 **Codex** 额度桶可能包含 **5 小时额度**、**每周额度**，或者同时包含两者。
+- 精确 Spark 模型使用独立的 **GPT-5.3-Codex-Spark** 额度桶，并显示该额度桶实际返回的窗口。
 
-每条进度条都会显示剩余百分比和按本地时区格式化的重置时间。额度窗口、模型资格和重置时间由 OpenAI 返回；数据缺失时界面会显示不可用，不会自行猜测。
+每条进度条都会显示剩余百分比和按本地时区格式化的重置时间。额度窗口、模型资格和重置时间由 OpenAI 返回；Codex Connect 不会根据套餐名称删除已返回的窗口，也不会虚构缺失窗口。
 
 ### 单独更改默认模型或全局搜索路由
 
@@ -331,7 +329,7 @@ dsh plugin --profile web exec dsh-codex-connect auto-review-probe --json
 
 ## 兼容性与安全边界
 
-- Alpha 4.23 已与 DSH 插件 API packages `0.1.2-alpha.2`、`@earendil-works/pi-ai` `^0.84.2`（验证时解析为 `0.84.4`）和 Node.js `^22.19.0 || >=24.0.0` 完成验证。已发布 Alpha 4.22 仍是同一 DSH 版本较早的已验证选择；Alpha 4.21 仍与 DSH `0.1.1-rc.2` 和 pi-ai `0.82.1` 保持已验证状态。[verified-compatibility.json](../verified-compatibility.json) 记录精确组合；安装命令见 [INSTALL.md](../INSTALL.md)。
+- Alpha 4.24 已与 DSH 插件 API packages `0.1.2-alpha.5`、`@earendil-works/pi-ai` `^0.84.2`（验证时解析为 `0.84.4`）和 Node.js `^22.19.0 || >=24.0.0` 完成验证。Alpha 4.23 仍是 DSH `0.1.2-alpha.2` 的已验证选择；Alpha 4.21 仍与 DSH `0.1.1-rc.2` 和 pi-ai `0.82.1` 保持已验证状态。[verified-compatibility.json](../verified-compatibility.json) 记录精确组合；安装命令见 [INSTALL.md](../INSTALL.md)。
 - 新版 DSH 将原来的 client runtime 拆分为 Session Controller、Settings、Store 和 Renderer 包。Codex Connect 通过这些公开接口接入设置和图片操作。规范化预览的编码与尺寸由 DSH 决定；Codex Connect 另行保留字节完全一致的原图。
 - 升级时请将 DSH 插件 API packages 与 `@earendil-works/pi-ai` 作为一组升级，再运行 `dsh-codex-connect doctor --json` 和兼容性检查。本契约不对未来版本作判断。
 - 每日上游检查发现新的 DSH `latest` 或 `next` 候选版本时，会把 Codex Connect 安装到隔离 Profile 中，在没有 OAuth 凭据的情况下启动已安装的模型运行时，验证模型与推理强度发现，并确认提供方可被正确卸载。真实登录、额度和模型请求仍需在测试 Profile 中人工验证。

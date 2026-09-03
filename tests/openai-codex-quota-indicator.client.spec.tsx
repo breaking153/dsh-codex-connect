@@ -93,7 +93,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('OpenAI Codex Composer plan-aware quota', () => {
+describe('OpenAI Codex Composer server-driven quota', () => {
   it('shows only for a GPT model on the exact OpenAI Codex provider', async () => {
     const resetAt = 1_735_689_600
     const fetchMock = vi.fn(async () => json({ status: 'signed-in', usage: usage(resetAt) }))
@@ -116,7 +116,8 @@ describe('OpenAI Codex Composer plan-aware quota', () => {
     expect(indicator.hasAttribute('title')).toBe(false)
     expect(indicator.getAttribute('aria-label')).toContain(en.composerWeeklyQuota)
     expect(indicator.getAttribute('aria-label')).toContain('5-hour quota')
-    expect(indicator.querySelector<HTMLElement>('[data-openai-codex-quota-progress="five-hour"]')?.style.width).toBe('88.5%')
+    expect(indicator.querySelector<HTMLElement>('[data-openai-codex-quota-progress="five-hour"]')?.style.width)
+      .toBe('88.5%')
     expect(indicator.getAttribute('aria-label')).toContain('72.5%')
     expect(indicator.getAttribute('aria-label')).toContain(localReset)
     expect(fetchMock).toHaveBeenCalledOnce()
@@ -157,7 +158,8 @@ describe('OpenAI Codex Composer plan-aware quota', () => {
     let indicator = await screen.findByRole('status')
     expect(indicator.getAttribute('aria-label')).toContain('18.5%')
     expect(indicator.getAttribute('aria-label')).toContain('64.5%')
-    expect(indicator.querySelector<HTMLElement>('[data-openai-codex-quota-progress="five-hour"]')?.style.width).toBe('64.5%')
+    expect(indicator.querySelector<HTMLElement>('[data-openai-codex-quota-progress="five-hour"]')?.style.width)
+      .toBe('64.5%')
     expect(indicator.querySelector<HTMLElement>('[data-openai-codex-quota-progress="weekly"]')?.style.width).toBe('18.5%')
 
     directory.set(directoryState('gpt-5-codex'))
@@ -230,7 +232,7 @@ describe('OpenAI Codex Composer plan-aware quota', () => {
     expect(indicator.getAttribute('aria-label')).toContain(en.resetUnavailable)
   })
 
-  it('shows the five-hour bar when the weekly window is unavailable', async () => {
+  it('shows only the windows returned for the selected model bucket', async () => {
     const fetchMock = vi.fn(async () => json({
       status: 'signed-in',
       usage: {
@@ -246,9 +248,10 @@ describe('OpenAI Codex Composer plan-aware quota', () => {
 
     render(<OpenAICodexQuotaIndicator directory={directory} t={t} />)
     const indicator = await screen.findByRole('status')
-    expect(indicator.querySelector<HTMLElement>('[data-openai-codex-quota-progress="five-hour"]')?.style.width).toBe('41.5%')
+    expect(indicator.textContent).toBe('5h')
+    expect(indicator.querySelector<HTMLElement>('[data-openai-codex-quota-progress="five-hour"]')?.style.width)
+      .toBe('41.5%')
     expect(indicator.querySelector('[data-openai-codex-quota-progress="weekly"]')).toBeNull()
-    expect(indicator.getAttribute('aria-label')).toContain('5-hour quota')
   })
 
   it('hides on signed-out or failed quota requests', async () => {
@@ -261,7 +264,7 @@ describe('OpenAI Codex Composer plan-aware quota', () => {
     await waitFor(() => { expect(screen.queryByRole('status')).toBeNull() })
   })
 
-  it('hides when the signed-in response has no applicable Codex window', async () => {
+  it('hides when the signed-in response has no codex weekly window', async () => {
     const fetchMock = vi.fn(async () => json({ status: 'signed-in', usage: { rateLimits: [] } }))
     vi.stubGlobal('fetch', fetchMock)
     const directory = directoryStore(directoryState('gpt-5'))

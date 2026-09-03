@@ -1,4 +1,4 @@
-/** Compact plan-aware Codex quota indicator for the Composer tool row. */
+/** Compact server-driven Codex quota indicator for the Composer tool row. */
 
 import { useEffect, useId, useSyncExternalStore, useState } from 'react'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -61,7 +61,11 @@ function usageFromStatus(value: unknown): OpenAICodexUsage | undefined {
   return usage as unknown as OpenAICodexUsage
 }
 
-function quotaOf(usage: OpenAICodexUsage, model: string | undefined, windowSeconds: number): OpenAICodexRateLimitWindow | undefined {
+function quotaOf(
+  usage: OpenAICodexUsage,
+  model: string | undefined,
+  windowSeconds: number,
+): OpenAICodexRateLimitWindow | undefined {
   const quotaId = model === SPARK_MODEL ? SPARK_QUOTA_ID : 'codex'
   return usage.rateLimits
     .find(limit => limit.id === quotaId)
@@ -110,7 +114,7 @@ function subscribeDirectory(directory: SnapshotStore<ModelDirectoryState>, liste
   return directory.subscribe(listener)
 }
 
-/** Render the quota windows selected for the detected plan and current model bucket. */
+/** Render the recognized quota windows returned for the current model bucket. */
 export function OpenAICodexQuotaIndicator({ directory, t }: OpenAICodexQuotaIndicatorInjected & { t: Translate }) {
   const directoryState = useSyncExternalStore(
     listener => subscribeDirectory(directory, listener),
@@ -217,8 +221,18 @@ export function OpenAICodexQuotaIndicator({ directory, t }: OpenAICodexQuotaIndi
     >
       {quotas.map(quota => {
         const progressColor = quotaProgressColor(quota.window.remainingPercent)
-        return <span key={quota.kind} aria-hidden="true" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ width: 18, color: 'var(--dsw-alias-label-tertiary)', fontSize: 9, lineHeight: '10px', textAlign: 'right' }}>
+        return <span
+          key={quota.kind}
+          aria-hidden="true"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        >
+          <span style={{
+            width: 18,
+            color: 'var(--dsw-alias-label-tertiary)',
+            fontSize: 9,
+            lineHeight: '10px',
+            textAlign: 'right',
+          }}>
             {quota.shortLabel}
           </span>
           <span

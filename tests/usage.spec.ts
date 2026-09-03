@@ -54,7 +54,6 @@ function payload(planType: unknown = 'business'): unknown {
         allowed: true,
         limit_reached: false,
         primary_window: { used_percent: 0, limit_window_seconds: 604_800 },
-        secondary_window: { used_percent: 20, limit_window_seconds: 18_000 },
       },
     }],
   }
@@ -83,6 +82,7 @@ describe('OpenAI Codex usage', () => {
           name: 'Codex',
           windows: [
             { remainingPercent: 87, windowSeconds: 604_800 },
+            { remainingPercent: 59.5, windowSeconds: 18_000 },
           ],
         },
         {
@@ -101,26 +101,13 @@ describe('OpenAI Codex usage', () => {
     })
   })
 
-  it.each(['go', 'plus', 'GO', ' Plus '])('keeps the five-hour windows for the %s plan', planType => {
-    const parsed = parseOpenAICodexUsage(payload(planType))
-    expect(parsed.rateLimits[0]?.windows).toEqual([
-      { remainingPercent: 87, windowSeconds: 604_800 },
-      { remainingPercent: 59.5, windowSeconds: 18_000 },
-    ])
-    expect(parsed.rateLimits[1]?.windows).toEqual([
-      { remainingPercent: 100, windowSeconds: 604_800 },
-      { remainingPercent: 80, windowSeconds: 18_000 },
-    ])
-  })
-
-  it.each(['pro', 'business', 'team', undefined, null])(
-    'omits legacy five-hour windows for the %s plan', planType => {
+  it.each(['plus', 'pro', 'business', 'team', undefined, null])(
+    'preserves server-returned windows without guessing semantics for the %s plan', planType => {
       const parsed = parseOpenAICodexUsage(payload(planType))
       expect(parsed.rateLimits[0]?.windows).toEqual([
         { remainingPercent: 87, windowSeconds: 604_800 },
+        { remainingPercent: 59.5, windowSeconds: 18_000 },
       ])
-      expect(parsed.rateLimits.flatMap(limit => limit.windows)
-        .some(window => window.windowSeconds === 18_000)).toBe(false)
     },
   )
 
@@ -134,7 +121,6 @@ describe('OpenAI Codex usage', () => {
 
   it('projects a valid WHAM reset_at without deriving a client-side timestamp', () => {
     const parsed = parseOpenAICodexUsage({
-      plan_type: 'plus',
       rate_limit: {
         primary_window: {
           used_percent: 13,
