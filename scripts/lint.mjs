@@ -38,8 +38,9 @@ for (const filename of productFiles) {
 }
 
 const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8')
+const normalizedReadme = readme.replace(/\r\n?/gu, '\n')
 const fullDescription = 'Connect your ChatGPT subscription to DeepSeek Harness with OAuth, optional GPT Image generation, user-controlled defaults, Harness-native approvals, diagnostics, and reliable session recovery.'
-if (!readme.startsWith(`# Codex Connect\n\n[![npm version](https://img.shields.io/npm/v/dsh-codex-connect/alpha?label=npm%20alpha&color=cb3837)](https://www.npmjs.com/package/dsh-codex-connect)\n\nEnglish | [中文](docs/README.zh.md)\n\n${fullDescription}\n`)) {
+if (!normalizedReadme.startsWith(`# Codex Connect\n\n[![npm version](https://img.shields.io/npm/v/dsh-codex-connect/alpha?label=npm%20alpha&color=cb3837)](https://www.npmjs.com/package/dsh-codex-connect)\n\nEnglish | [中文](docs/README.zh.md)\n\n${fullDescription}\n`)) {
   failures.push('README opening description mismatch')
 }
 const quickStartInstall = 'dsh plugin --profile web add dsh-codex-connect@0.1.0-alpha.4.24'

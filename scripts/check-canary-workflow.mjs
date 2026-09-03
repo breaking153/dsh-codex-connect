@@ -9,12 +9,12 @@ const packagePath = fileURLToPath(new URL('../package.json', import.meta.url))
 const installCheckPath = fileURLToPath(new URL('./check-dsh-install.mjs', import.meta.url))
 const nextCheckPath = fileURLToPath(new URL('./check-dsh-next.mjs', import.meta.url))
 const canaryEnvironmentPath = fileURLToPath(new URL('./canary-environment.mjs', import.meta.url))
-const workflow = readFileSync(workflowPath, 'utf8')
-const ciWorkflow = readFileSync(ciWorkflowPath, 'utf8')
+const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n?/gu, '\n')
+const ciWorkflow = readFileSync(ciWorkflowPath, 'utf8').replace(/\r\n?/gu, '\n')
 const packageJson = JSON.parse(readFileSync(packagePath, 'utf8'))
-const installCheck = readFileSync(installCheckPath, 'utf8')
-const nextCheck = readFileSync(nextCheckPath, 'utf8')
-const canaryEnvironment = readFileSync(canaryEnvironmentPath, 'utf8')
+const installCheck = readFileSync(installCheckPath, 'utf8').replace(/\r\n?/gu, '\n')
+const nextCheck = readFileSync(nextCheckPath, 'utf8').replace(/\r\n?/gu, '\n')
+const canaryEnvironment = readFileSync(canaryEnvironmentPath, 'utf8').replace(/\r\n?/gu, '\n')
 
 const failures = []
 let assertionCount = 0
